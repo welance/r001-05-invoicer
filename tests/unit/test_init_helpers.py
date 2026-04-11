@@ -8,12 +8,15 @@ and those functions are thin wrappers around pure helpers we DO test.
 from unittest.mock import patch
 
 from invoicer.init_cmd import (
+    _WIZARD_STEPS,
+    _check_prerequisites,
     _detect_anthropic_configured,
     _detect_clockify_configured,
     _detect_gmail_sender_configured,
     _detect_qonto_orgs_in_env,
     _env_suffix,
     _orgs_blocks_differ,
+    _print_welcome_panel,
 )
 from invoicer.project_config import (
     _find_orgs_block,
@@ -437,6 +440,111 @@ class TestFindSecretsBlock:
             "      foo: bar\n",
         ]
         assert _find_secrets_block(lines) is None
+
+
+class TestWizardHelpers:
+    """The welcome panel and pre-flight check are pure output helpers —
+    they have no return value to assert on, so we just verify they run
+    without exploding and that key content lands in stdout/stderr."""
+
+    def test_wizard_steps_not_empty(self):
+        assert len(_WIZARD_STEPS) >= 4, "wizard should have multiple steps"
+
+    def test_wizard_steps_look_sane(self):
+        # Each step is a non-empty human-readable string
+        for step in _WIZARD_STEPS:
+            assert isinstance(step, str)
+            assert len(step) > 5
+
+    def test_print_welcome_panel_runs_without_error(self, capsys):
+        _print_welcome_panel()
+        captured = capsys.readouterr()
+        # The panel should mention the step count and the name
+        assert "invoicer setup wizard" in captured.out
+        # All step descriptions should appear somewhere
+        for step in _WIZARD_STEPS:
+            # Partial match because rich may wrap long lines
+            first_word = step.split()[0]
+            assert first_word in captured.out
+
+    def test_check_prerequisites_all_present(self, capsys):
+        """When every tool is on PATH, the output shows green checks
+        and no install hints."""
+        with patch(
+            "invoicer.init_cmd.shutil.which",
+            side_effect=lambda name: f"/usr/local/bin/{name}",
+        ):
+            _check_prerequisites()
+        captured = capsys.readouterr()
+        # All three tool names appear with a success marker
+        for tool in ["uv", "git", "op"]:
+            assert tool in captured.out
+        # No install URLs should land in stderr when everything's found
+        assert "install:" not in captured.err
+
+    def test_check_prerequisites_all_missing(self, capsys):
+        """When nothing is on PATH, each tool shows a cross + install URL
+        in stderr. Non-blocking — no raise."""
+        with patch("invoicer.init_cmd.shutil.which", return_value=None):
+            _check_prerequisites()
+        captured = capsys.readouterr()
+        # All three tool names still appear
+        for tool in ["uv", "git", "op"]:
+            assert tool in captured.out
+        # And install hints land in stderr for all of them
+        assert "install:" in captured.err
+        # The reassurance message appears
+        assert "aren't blockers" in captured.err
+
+    def test_check_prerequisites_partial(self, capsys):
+        """Mixed state: uv present, git missing, op missing. Output should
+        be clear about which is which."""
+
+        def which(name):
+            return "/usr/local/bin/uv" if name == "uv" else None
+
+        with patch("invoicer.init_cmd.shutil.which", side_effect=which):
+            _check_prerequisites()
+        captured = capsys.readouterr()
+        # git and op show install URLs
+        assert "git-scm.com" in captured.err
+        assert "developer.1password.com" in captured.err
+        # uv does not
+        assert "astral.sh/uv" not in captured.err
+
+
+class TestIsFirstRun:
+    """help_cmd._is_first_run detects whether the current directory looks
+    like an unconfigured clone — if so, the `invoicer help` welcome panel
+    shows a prominent call-to-action pointing at `invoicer init`."""
+
+    def test_first_run_when_no_env_or_yaml(self, tmp_path, monkeypatch):
+        from invoicer.help_cmd import _is_first_run
+
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        assert _is_first_run() is True
+
+    def test_not_first_run_when_env_exists(self, tmp_path, monkeypatch):
+        from invoicer.help_cmd import _is_first_run
+
+        (tmp_path / ".env").write_text("CLOCKIFY_API_KEY=foo\n")
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        assert _is_first_run() is False
+
+    def test_not_first_run_when_invoicer_yaml_exists(self, tmp_path, monkeypatch):
+        from invoicer.help_cmd import _is_first_run
+
+        (tmp_path / "invoicer.yaml").write_text("clients: []\n")
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        assert _is_first_run() is False
+
+    def test_not_first_run_when_both_exist(self, tmp_path, monkeypatch):
+        from invoicer.help_cmd import _is_first_run
+
+        (tmp_path / ".env").write_text("CLOCKIFY_API_KEY=foo\n")
+        (tmp_path / "invoicer.yaml").write_text("clients: []\n")
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        assert _is_first_run() is False
 
 
 class TestWriteSecretsCredentialsJsonBlockRoundTrip:

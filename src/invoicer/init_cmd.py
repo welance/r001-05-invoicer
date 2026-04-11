@@ -252,7 +252,7 @@ def _ensure_qonto(
     or no orgs existed before.
     """
     typer.echo()
-    typer.secho("== Qonto ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 2/{len(_WIZARD_STEPS)}: Qonto ==", fg="cyan", bold=True)
 
     existing_orgs = _detect_qonto_orgs_in_env(existing)
 
@@ -304,7 +304,7 @@ def _ensure_clockify(
     force: bool,
 ) -> tuple[dict[str, str], bool]:
     typer.echo()
-    typer.secho("== Clockify ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 3/{len(_WIZARD_STEPS)}: Clockify ==", fg="cyan", bold=True)
 
     if _detect_clockify_configured(existing) and not force:
         ws = existing.get("CLOCKIFY_WORKSPACE_ID", "?")
@@ -339,7 +339,7 @@ def _ensure_gmail_sender(
     force: bool,
 ) -> tuple[dict[str, str], bool]:
     typer.echo()
-    typer.secho("== Gmail sender ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 4a/{len(_WIZARD_STEPS)}: Gmail sender ==", fg="cyan", bold=True)
 
     if _detect_gmail_sender_configured(existing) and not force:
         sender = existing.get("GMAIL_SENDER", "")
@@ -377,7 +377,7 @@ def _ensure_anthropic(
     force: bool,
 ) -> tuple[dict[str, str], bool]:
     typer.echo()
-    typer.secho("== Anthropic (optional) ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 5/{len(_WIZARD_STEPS)}: Anthropic (optional) ==", fg="cyan", bold=True)
 
     if _detect_anthropic_configured(existing) and not force:
         typer.echo("Found existing Anthropic API key.")
@@ -510,6 +510,88 @@ def _explain_google_oauth_setup() -> None:
         default=True,
     ).ask():
         webbrowser.open("https://console.cloud.google.com/projectcreate")
+
+
+_WIZARD_STEPS = [
+    "Verify prerequisites (uv, git, optionally 1Password CLI)",
+    "Qonto API credentials (per legal entity)",
+    "Clockify API key + workspace",
+    "Gmail sender + OAuth (via 1Password if available)",
+    "Anthropic API key (optional, for AI-assisted client add)",
+    "Test every connection",
+]
+
+
+def _print_welcome_panel() -> None:
+    """Rich panel at the top of run_init listing every step the user is
+    about to go through, so they have a map of the journey before answering
+    any prompts."""
+    from rich.console import Console
+    from rich.panel import Panel
+
+    lines = [
+        f"[bold green]invoicer setup wizard[/bold green]  ·  "
+        f"{len(_WIZARD_STEPS)} steps",
+        "",
+        "This wizard will walk you through:",
+        "",
+    ]
+    for i, step in enumerate(_WIZARD_STEPS, start=1):
+        lines.append(f"  [cyan]{i}.[/cyan] {step}")
+    lines += [
+        "",
+        "[dim]Ctrl-C at any prompt to abort — nothing is written until "
+        "you confirm.[/dim]",
+        "",
+        "[dim]Re-running this command is safe: it detects what's already "
+        "configured and asks[/dim]",
+        "[dim]per-section whether to keep, edit, or add.[/dim]",
+    ]
+    Console().print(
+        Panel(
+            "\n".join(lines),
+            border_style="green",
+            padding=(1, 2),
+        )
+    )
+
+
+def _check_prerequisites() -> None:
+    """Check that the commands invoicer depends on are on PATH. Non-blocking —
+    missing tools just produce a warning with install hints, because:
+    - `op` is optional (only needed for the 1Password credentials path)
+    - `git` and `uv` are needed for `invoicer update` but not for init itself
+    - a user on a fresh CI image might legitimately not have some of them
+
+    Called from run_init() as Step 1 of the wizard.
+    """
+    import shutil
+
+    typer.echo()
+    typer.secho(f"== Step 1/{len(_WIZARD_STEPS)}: Prerequisites ==", fg="cyan", bold=True)
+
+    checks = [
+        ("uv", "https://docs.astral.sh/uv/getting-started/installation/",
+         "required for `invoicer update` (reinstall the tool)"),
+        ("git", "https://git-scm.com/downloads",
+         "required for `invoicer update` (pull new versions)"),
+        ("op", "https://developer.1password.com/docs/cli/get-started/",
+         "optional — lets `invoicer init` fetch credentials.json from 1Password"),
+    ]
+    for name, url, why in checks:
+        if shutil.which(name):
+            typer.secho(f"  ✓ {name:<4}", fg="green", nl=False)
+            typer.echo(f"  {why}")
+        else:
+            typer.secho(f"  ✗ {name:<4}", fg="yellow", nl=False)
+            typer.echo(f"  {why}")
+            typer.echo(f"    install: {url}", err=True)
+
+    typer.echo(
+        "\n(Missing tools aren't blockers — the wizard will offer "
+        "fallback paths when needed.)",
+        err=True,
+    )
 
 
 def _setup_1password_credentials_interactively() -> bool:
@@ -688,7 +770,7 @@ def _ensure_gmail_oauth(*, force: bool) -> tuple[bool, bool]:
       the OAuth flow directly (opens a second browser tab, writes token.json).
     """
     typer.echo()
-    typer.secho("== Gmail OAuth ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 4b/{len(_WIZARD_STEPS)}: Gmail OAuth ==", fg="cyan", bold=True)
 
     ready, msg = _detect_gmail_oauth_ready()
     if ready and not force:
@@ -803,16 +885,19 @@ def _ensure_gmail_oauth(*, force: bool) -> tuple[bool, bool]:
 
 
 def run_init(*, force: bool = False) -> None:
-    """Idempotent interactive setup.
+    """Idempotent interactive setup wizard.
 
-    Each section asks Keep/Edit/Add when it detects existing config,
-    unless force=True. The "Next steps" block at the end prints only
-    the delta — sections the user actually touched during this run.
+    Walks the user through every piece of config invoicer needs, in a
+    numbered sequence with a welcome panel up front. Each section
+    detects what's already set and asks Keep/Edit/Add rather than
+    forcing a full re-prompt, unless `force=True`. The "Next steps"
+    block at the end prints only the delta — sections the user
+    actually touched during this run.
     """
-    typer.secho("\n==  invoicer — interactive setup  ==\n", fg="green", bold=True)
+    _print_welcome_panel()
 
     project_dir = get_project_root()
-    typer.echo(f"Project directory: {project_dir}")
+    typer.echo(f"\nProject directory: {project_dir}")
     if force:
         typer.secho(
             "Running with --force: every section will re-prompt.",
@@ -830,15 +915,18 @@ def run_init(*, force: bool = False) -> None:
         if not questionary.confirm("Continue anyway?", default=False).ask():
             raise typer.Exit(1)
 
+    # --- Step 1: prerequisites (non-blocking) ---
+    _check_prerequisites()
+
     env_path = _env_path()
     existing = _read_env_file(env_path)
     if existing:
         typer.echo(
-            f"Found existing .env at {env_path} "
+            f"\nFound existing .env at {env_path} "
             f"({len(existing)} keys — will skip sections that are already set)."
         )
     else:
-        typer.echo(f"No .env at {env_path} — let's create one.")
+        typer.echo(f"\nNo .env at {env_path} — let's create one.")
 
     # Track which sections the user actually touched, for the delta
     # "Next steps" block at the end.
@@ -973,7 +1061,7 @@ def run_init(*, force: bool = False) -> None:
 
     # --- connectivity tests ---
     typer.echo()
-    typer.secho("== Testing connections ==", fg="cyan", bold=True)
+    typer.secho(f"== Step 6/{len(_WIZARD_STEPS)}: Testing connections ==", fg="cyan", bold=True)
 
     for org in new_orgs:
         label = f"Qonto [{org['id']}]".ljust(28)
