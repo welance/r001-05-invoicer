@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+.DS_Store
+*.egg-info/
+dist/
+build/
+credentials.json
+token.json
+# Personal billing config — users copy from invoicer.example.yaml
+invoicer.yaml
+# Local Claude Code state (memory, tasks, settings)
+.claude/

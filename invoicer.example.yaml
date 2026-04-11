@@ -1,0 +1,25 @@
+# invoicer.example.yaml — copy this to invoicer.yaml and fill in your own data.
+# Qonto is the single source of truth for client info; this file only stores
+# the Clockify → Qonto mapping and the per-project billing terms.
+
+clients:
+  # Map Clockify client ids → Qonto client ids.
+  # Get ids by running:  invoicer discover
+  - clockify_id: "clockify_client_id_here"
+    qonto_id: "qonto_client_uuid_here"
+
+projects:
+  # Keyed by Clockify project id (the long hex string).
+  "clockify_project_id_here":
+    alias: "shortname"                              # used as: invoicer draft shortname --month YYYY-MM
+    name: "Human-readable project name"
+    rate_eur_per_hour: 85
+    vat_rate: 0                                     # 0 for intra-EU B2B reverse charge; 22 for Italian domestic; etc.
+    vat_exemption_reason: "N3.2"                    # Italian SDI code — REQUIRED when vat_rate is 0 on Italian orgs.
+                                                    # N2.1 = non-taxable services under art. 7-ter DPR 633/72
+                                                    # N3.2 = non-taxable intra-community supplies (art. 41 DL 331/93)
+                                                    # N6.7 = specific reverse charge scenarios
+                                                    # ⚠️ Consult your accountant before choosing.
+    description_template: "Consulting services — {month_name} {year}"
+    payment_terms_days: 30                          # Due date = issue_date + this
+    rounding_minutes: 15                            # Per-entry ceiling rounding (0 = no rounding)
