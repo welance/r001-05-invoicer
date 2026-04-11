@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-04-11
+
+### Fixed
+
+- **`invoicer help` now shows the command list**, not just the topic index.
+  The initial 0.2.0 implementation copied the `uv help` / `gh help` shape
+  (topics only) but most users reach for `invoicer help` expecting a `git help`
+  shape (commands first). The welcome panel now shows:
+
+  1. A **Commands** section auto-generated from Typer's registered commands
+     (top-level + sub-typer groups like `client add` / `client extract`)
+  2. The **Help topics** section (unchanged — 5 long-form markdown topics)
+
+  Commands are introspected from `invoicer.cli.app` via `registered_commands`
+  / `registered_groups`, so the list stays in sync as commands are added or
+  removed. Regression test `test_list_topics_includes_commands` locks this in.
+
+- **108 unit tests pass** (up from 107 in 0.2.0).
+
 ## [0.2.0] - 2026-04-11
 
 ### Added
