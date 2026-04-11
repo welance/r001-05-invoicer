@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-11
+
+### Added
+
+- **`invoicer help` command** — long-form, topic-based help rendered in the terminal with `rich.markdown`. Five initial topics shipped as markdown files inside the `invoicer.help` package:
+  - `getting-started` — prerequisites, `invoicer init`, Gmail OAuth setup
+  - `workflow` — the monthly 4-command invoicing flow
+  - `italy-sdi` — Italian e-invoicing specifics: N-codes, TP/MP codes, SDI lifecycle
+  - `troubleshooting` — common errors and how to recover
+  - `security` — secrets rotation, gmail.modify scope honesty, branch protection
+- `invoicer help` with no argument prints a welcome panel listing all topics.
+- `invoicer help <topic>` renders the topic's markdown content with full styling.
+- AST-based regression test (`TestGmailModuleSafety`) that fails if `gmail.py` ever
+  imports `smtplib` or contains any `.send()` call. Locks in the code-level safety
+  property the README and `security` topic both claim.
+
+### Tests
+
+- 107 unit tests pass in ~300ms (up from 95 in 0.1.1)
+
 ## [0.1.1] - 2026-04-11
 
 ### Fixed
