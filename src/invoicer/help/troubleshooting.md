@@ -107,7 +107,7 @@ See `invoicer help italy-sdi` → "If SDI rejects" section. You can't edit a fin
 
 Then open the 1Password desktop app → Settings → Developer → check **"Integrate with 1Password CLI"**. The next time you run `invoicer init`, `op` will biometric-prompt and the fetch will succeed.
 
-If you don't use 1Password, remove the `secrets:` block from `invoicer.yaml` — the tool will fall back to the manual Google Cloud Console walkthrough.
+If your team doesn't use 1Password, just remove the `secrets:` block from `invoicer.yaml` entirely — the tool will fall back to the manual Google Cloud Console walkthrough, and nothing else needs changing.
 
 ## `Not signed in to 1Password CLI`
 
@@ -123,9 +123,9 @@ Verify with `op whoami` — it should return your email.
 
 **Cause**: `op` is signed in, but the fetch failed. Three common reasons in order of likelihood:
 
-1. **You're not a member of the vault.** Ask the 1Password admin to add you to the vault (for welance: `p007-01 Welance`).
+1. **You're not a member of the vault.** Ask whoever manages the 1Password vault (the admin for welance colleagues is responsible for the `p007-01 Welance` vault; for other teams it's whoever set up your shared invoicer vault) to add you.
 2. **Vault or item name has a typo in `invoicer.yaml`.** 1Password is case-sensitive and exact-match. Open the item in the 1Password web UI and copy the exact vault name / item name.
-3. **The file field inside the item is named something other than `credentials.json`.** Open the item and check the attachment name.
+3. **The file field inside the item is named something other than `credentials.json`.** Open the item and check the attachment name — it must match the `file:` key in your `invoicer.yaml` `secrets:` block.
 
 The error output includes which email `op` is signed in as and the raw `op` stderr — use both to diagnose.
 

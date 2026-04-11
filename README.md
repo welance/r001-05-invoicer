@@ -10,16 +10,22 @@ Open-sourced by [welance](https://welance.com) under MIT. The `r001-05` prefix i
 
 ---
 
-## 🚀 Get started (welance team — 3 commands)
+## 🚀 Get started with 1Password (3 commands)
 
-If you're on the welance team and already have **1Password** installed, the setup is three commands total. The tool will fetch your Gmail OAuth client file from our shared 1Password vault and walk you through the rest:
+If you use **1Password** — personal, Teams, or Business — the setup is three commands. The tool fetches your Gmail OAuth client file directly from a 1Password vault you control, so you (and anyone on your team with access to that vault) don't have to go through the Google Cloud Console by hand.
+
+**One-time, per machine:**
 
 ```bash
-# 1. Install the 1Password CLI (one-time, per machine)
+# 1. Install the 1Password CLI
 brew install 1password-cli
 # Then enable the desktop-app integration: 1Password app → Settings →
 # Developer → check "Integrate with 1Password CLI"
+```
 
+**One-time, per project clone:**
+
+```bash
 # 2. Clone + install the tool
 git clone https://github.com/welance/r001-05-invoicer.git
 cd r001-05-invoicer
@@ -27,28 +33,41 @@ uv tool install --editable .      # installs `invoicer` on your PATH
 invoicer --install-completion     # enable tab-completion in your shell
 
 # 3. Run the guided setup
-invoicer init                     # asks for your Qonto + Clockify keys, fetches
-                                  # credentials.json from 1Password, opens the
-                                  # browser for Gmail account selection, tests
-                                  # every connection
+invoicer init
 ```
 
-That's it. You'll be asked for:
-- Your welance Qonto org credentials (one or more legal entities — SRL, GmbH, etc.)
-- Your Clockify API key
-- Which Google account should own your invoice drafts (browser picker)
-
-Everything else is automated: `credentials.json` is fetched from the shared **1Password vault `p007-01 Welance`** (item `invoicer-credentials-json`), OAuth token landed in your own `token.json`, and your Gmail drafts go to *your* Drafts folder.
-
-Then produce your first draft invoice:
+`invoicer init` asks for your Qonto + Clockify keys, fetches `credentials.json` from 1Password, opens the browser for Gmail account selection, and tests every connection. Then:
 
 ```bash
 invoicer draft <project-alias> --month 2026-04 --purchase-order "Attn: Nick"
 ```
 
-### 🛠 Get started (everyone else — without 1Password)
+### Setting up the shared 1Password item (one-time, per team)
 
-If you're forking this tool outside welance, the `secrets:` block in `invoicer.yaml` is optional. Leave it commented out, and `invoicer init` falls back to a 4-step Google Cloud Console walkthrough for creating your own `credentials.json`. See `invoicer help getting-started` for details.
+The pattern is fully generic — pick any vault, pick any item name, point your `invoicer.yaml` at it:
+
+1. Create a Google Cloud OAuth client (Desktop app type) once and download `credentials.json`. See [Gmail API OAuth setup](#2-gmail-api-oauth-one-time-15-minutes) below.
+2. In 1Password, create a new **Document** item in a shared vault. Name it something stable — the convention is `invoicer-credentials-json` — and upload the file.
+3. Grant vault access to every colleague who'll run the tool.
+4. In your project's `invoicer.yaml`, point the `secrets:` block at it:
+   ```yaml
+   secrets:
+     credentials_json:
+       source: 1password
+       vault: "<your vault name>"       # exact match, case-sensitive
+       item: invoicer-credentials-json
+       file: credentials.json
+   ```
+
+That's it. Every colleague runs `invoicer init`, the tool runs `op read "op://<vault>/invoicer-credentials-json/credentials.json"`, gets the file, and walks into the OAuth flow. **Each user's OAuth produces their own `token.json`** with tokens bound to their own Google account, so drafts land in the right Gmail mailbox per person despite the shared client file. Google's docs explicitly say the `client_secret` inside a Desktop-app `credentials.json` is not a cryptographic secret — it's just a well-known identifier of the registered OAuth client — so sharing one file across a team is by design.
+
+**Rotating the OAuth client**: update the Document item in 1Password once, then every colleague runs `invoicer secrets fetch --force`. Two seconds each, no re-running setup.
+
+**Welance-specific example**: the file is at vault `"p007-01 Welance"`, item `invoicer-credentials-json`, which is what the example in `invoicer.example.yaml` uses. Anyone outside welance replaces the vault name with their own.
+
+### 🛠 Get started without 1Password
+
+The `secrets:` block in `invoicer.yaml` is optional. Leave it out entirely, and `invoicer init` falls back to a 4-step Google Cloud Console walkthrough for creating your own `credentials.json` locally. See `invoicer help getting-started` for details.
 
 ---
 

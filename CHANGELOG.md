@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-04-11
+
+### Changed
+
+- **1Password onboarding docs broadened beyond welance.** The 0.4.3
+  release shipped the 1Password fetch path, but the framing implied it
+  was a welance-specific feature. It's not — the tool has zero
+  welance-specific logic; the vault name, item name, and field name
+  are all config values in `invoicer.yaml`. Anyone with 1Password
+  (Personal, Teams, or Business) can adopt the same pattern: upload
+  their own `credentials.json` to a Document item in a shared vault,
+  point `invoicer.yaml`'s `secrets:` block at it, and every colleague
+  with vault access runs `invoicer init` without ever touching Google
+  Cloud Console by hand.
+- **README quick-start** retitled from "Get started (welance team)" to
+  "Get started with 1Password (3 commands)". Welance kept as a
+  concrete worked example, not as the only supported path. Adds a
+  "Setting up the shared 1Password item" section walking any team
+  through creating their own Document item and pointing `invoicer.yaml`
+  at it.
+- **`getting-started` help topic** retitled from "Gmail — the welance
+  path" to "Gmail — the 1Password path (recommended for teams)". Same
+  expansion: generic walkthrough first, welance vault as a concrete
+  instance.
+- **`invoicer.example.yaml`** `secrets:` comment block now shows TWO
+  examples: a generic template with `"Your Vault Name"` as the
+  placeholder, and the welance-specific one underneath for welance
+  colleagues to copy. Anyone else edits the generic one.
+- **`troubleshooting` help topic** language broadened: "Ask whoever
+  manages the 1Password vault" instead of the previous welance-only
+  phrasing.
+
+### Tests
+
+- No code changes → no test changes. **193 passing** unchanged.
+
 ## [0.4.3] - 2026-04-11
 
 ### Added
