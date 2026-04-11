@@ -1,8 +1,34 @@
-# invoicer
+# r001-05-invoicer
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/welance/r001-05-invoicer/actions/workflows/ci.yml/badge.svg)](https://github.com/welance/r001-05-invoicer/actions/workflows/ci.yml)
 
 A tiny, honest CLI that turns **Clockify** hours into **Qonto** client invoices — with real pre-mutation previews, typed-confirmation gates, and a **Gmail-drafts** step that never sends directly. Built for small digital agencies, initially Italy-first.
 
-Open-sourced by [welance](https://welance.com) under MIT.
+Open-sourced by [welance](https://welance.com) under MIT. The `r001-05` prefix is our internal project ID.
+
+---
+
+## 🚀 Get started in 60 seconds
+
+```bash
+git clone https://github.com/welance/r001-05-invoicer.git
+cd r001-05-invoicer
+uv tool install --editable .      # installs `invoicer` on your PATH
+invoicer init                     # interactive: prompts for each API key, tests every connection
+invoicer discover                 # shows your Clockify + Qonto inventory
+```
+
+Then edit `invoicer.yaml` to map one Clockify project to one Qonto client, and you can produce your first draft invoice:
+
+```bash
+invoicer draft <project-alias> --month 2026-04 --purchase-order "Attn: Nick"
+```
+
+See the full setup guide below if `invoicer init` can't auto-configure something.
+
+---
 
 ---
 
@@ -40,6 +66,7 @@ Concretely:
 ## Commands
 
 ```
+invoicer init                                  # Interactive first-run setup (new!)
 invoicer discover                              # List Clockify + Qonto inventories
 invoicer client extract                        # LLM-parse company details from pasted text (Anthropic Haiku)
 invoicer client add                            # Extract → review → POST /v2/clients to Qonto
@@ -60,7 +87,7 @@ invoicer mail-draft <invoice_id>               # Download PDF + CSV, create Gmai
 
 ```bash
 # Clone the repo
-git clone https://github.com/welance/invoicer.git
+git clone https://github.com/welance/r001-05-invoicer.git
 cd invoicer
 
 # Install in a venv (recommended with uv)

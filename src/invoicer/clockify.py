@@ -1,7 +1,7 @@
 import math
 import os
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 
@@ -113,8 +113,8 @@ def aggregate_billable_hours(
                     f"/workspaces/{ws}/user/{user_id}/time-entries",
                     params={
                         "project": project_id,
-                        "start": start.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                        "end": end.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "start": start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                        "end": end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
                         "page": page,
                         "page-size": 200,
                     },

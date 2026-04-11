@@ -1,4 +1,5 @@
 import sys
+from datetime import UTC
 from pathlib import Path
 
 import typer
@@ -9,6 +10,14 @@ from .config import load_env
 app = typer.Typer(help="Clockify → Qonto invoicing tool", no_args_is_help=True)
 client_app = typer.Typer(help="Manage Qonto clients", no_args_is_help=True)
 app.add_typer(client_app, name="client")
+
+
+@app.command()
+def init() -> None:
+    """Interactive first-run setup. Prompts for API keys, tests every connection."""
+    from .init_cmd import run_init
+
+    run_init()
 
 
 @app.command()
@@ -126,7 +135,7 @@ def draft(
 ) -> None:
     """Create a Qonto draft invoice for a Clockify project + month."""
     from calendar import monthrange
-    from datetime import date, datetime, timedelta, timezone
+    from datetime import date, datetime, timedelta
 
     import questionary
 
@@ -138,11 +147,11 @@ def draft(
     # Parse month
     try:
         year, mon = (int(x) for x in month.split("-"))
-        period_start = datetime(year, mon, 1, tzinfo=timezone.utc)
-        period_end = datetime(year, mon, monthrange(year, mon)[1], 23, 59, 59, tzinfo=timezone.utc)
-    except (ValueError, IndexError):
+        period_start = datetime(year, mon, 1, tzinfo=UTC)
+        period_end = datetime(year, mon, monthrange(year, mon)[1], 23, 59, 59, tzinfo=UTC)
+    except (ValueError, IndexError) as e:
         typer.echo(f"Invalid --month {month!r}, expected YYYY-MM.", err=True)
-        raise typer.Exit(1)
+        raise typer.Exit(1) from e
 
     # Fuzzy search for a project match. Prompt on ambiguity.
     matches = project_config.find_projects(project)
@@ -224,7 +233,9 @@ def draft(
         "July", "August", "September", "October", "November", "December",
     ]
     month_name = month_names[mon - 1]
-    period_description = description_template.format(month_name=month_name, year=year)
+    # description_template is preserved in config for forward compatibility but not
+    # rendered onto per-entry line items in v0.1.
+    _ = description_template
     issue_date = date.today().isoformat()
     due_date = (date.today() + timedelta(days=payment_terms_days)).isoformat()
 
@@ -279,7 +290,7 @@ def draft(
         raise typer.Exit(0)
 
     created = qonto.create_client_invoice(payload)
-    typer.echo(f"\n✓ Created Qonto draft invoice")
+    typer.echo("\n✓ Created Qonto draft invoice")
     typer.echo(f"  id:     {created.get('id')}")
     typer.echo(f"  number: {created.get('number', '(auto)')}")
     typer.echo(f"  status: {created.get('status')}")
@@ -343,9 +354,9 @@ def mail_draft(
 
     import questionary
 
-    from .gmail import build_invoice_email, create_draft, update_draft
-    from .summary import print_mail_draft_summary
     from .csv_export import build_invoice_csv
+    from .gmail import build_invoice_email, create_draft
+    from .summary import print_mail_draft_summary
 
     load_env()
 
@@ -373,7 +384,6 @@ def mail_draft(
     issue_date = inv.get("issue_date", "")
     due_date = inv.get("due_date", "")
     client_name = client.get("name", "")
-    period = issue_date[:7] if issue_date else ""
 
     typer.echo("Downloading invoice PDF from Qonto...", err=True)
     pdf_filename, pdf_bytes = qonto.download_invoice_pdf(invoice_id)
@@ -427,7 +437,7 @@ def mail_draft(
         ],
     )
     draft = create_draft(msg)
-    typer.echo(f"\n✓ Gmail draft created")
+    typer.echo("\n✓ Gmail draft created")
     typer.echo(f"  draft_id: {draft.get('id')}")
     typer.echo("  Open Gmail web → Drafts → review → click Send.")
 

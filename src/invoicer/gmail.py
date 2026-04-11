@@ -8,7 +8,6 @@ First-time use opens a browser for consent. Token is cached in token.json.
 """
 
 import base64
-import os
 from email.message import EmailMessage
 from email.utils import formatdate, make_msgid
 from pathlib import Path

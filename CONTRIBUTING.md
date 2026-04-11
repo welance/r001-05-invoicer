@@ -24,12 +24,11 @@ This tool is intentionally small and opinionated. Its job is to connect **Clocki
 ## Development setup
 
 ```bash
-git clone https://github.com/welance/invoicer.git
-cd invoicer
+git clone https://github.com/welance/r001-05-invoicer.git
+cd r001-05-invoicer
 uv venv
 uv pip install -e .
-cp .env.example .env   # fill in your own keys (use a throwaway Qonto client for testing)
-cp invoicer.example.yaml invoicer.yaml
+invoicer init   # interactive setup — prompts for API keys, tests connections
 ```
 
 ## Testing

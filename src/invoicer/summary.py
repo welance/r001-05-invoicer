@@ -7,7 +7,6 @@ before asking for confirmation. Human-readable, explicit about reversibility.
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
-from rich.text import Text
 
 _console = Console()
 
