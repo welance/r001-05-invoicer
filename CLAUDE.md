@@ -37,9 +37,24 @@ itself.
 - **`finalize` requires typed confirmation** of the invoice number — not a
   `y/N`. Do not soften this.
 - **LLM calls are opt-in only.** Today that means `invoicer client add` in
-  its default (AI) mode; `--no-ai` skips it entirely. A happy-path monthly
-  invoice run uses zero LLM tokens. Do not add LLM calls to `draft` /
-  `finalize` / `mail-draft`.
+  its default (AI) mode and `invoicer defaults set --ai`; both paths have
+  a `--no-ai` / non-AI variant. A happy-path monthly invoice run uses zero
+  LLM tokens. Do not add LLM calls to `draft` / `finalize` / `mail-draft`.
+- **`defaults:` in `invoicer.yaml` caches ONLY routing answers** (`org`,
+  `locale`, `gmail_sender`) — never confirmation gates. Do not add keys
+  that would let the tool skip the pre-mutation panel or the typed
+  finalize confirmation. The point of those prompts is that the user
+  cannot *not* see them.
+- **Gmail sender ≠ authenticated account** is a lurking footgun. `token.json`
+  is issued to whoever goes through the installed-app OAuth flow on first
+  run; the `GMAIL_SENDER` env var only sets the `From:` header. If they
+  disagree, Google Workspace either rewrites the header or fails at send
+  time. When in doubt: auth as the mailbox you want to send from.
+- **SDI `payment_reporting` codes (`TP02`/`MP05`) belong ONLY on Italian
+  invoices.** The `draft` command gates them on the active org's `country`
+  field in `invoicer.yaml`. Never pass them unconditionally —
+  `qonto.build_invoice_payload` accepts `payment_reporting=None` precisely
+  so non-IT orgs don't carry Italian e-invoicing metadata.
 
 ## Italian SDI specifics
 

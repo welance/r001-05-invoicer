@@ -86,7 +86,7 @@ See `invoicer help italy-sdi` → "If SDI rejects" section. You can't edit a fin
 
 ## Qonto `401 Unauthorized`
 
-**Cause**: invalid `QONTO_LOGIN` or `QONTO_SECRET_KEY`, or the auth header format is wrong. Qonto uses `Authorization: <login>:<secret>` (a single colon-separated header, not Basic auth).
+**Cause**: invalid Qonto credentials for the active org, or the auth header format is wrong. Qonto uses `Authorization: <login>:<secret>` (a single colon-separated header, not Basic auth). In multi-org mode the active credentials come from `QONTO_LOGIN_<SUFFIX>` / `QONTO_SECRET_KEY_<SUFFIX>` — check that the right pair is set in `.env` and that `invoicer.yaml` points at them via `login_env` / `secret_env`. See `invoicer help multi-org`.
 
 **Fix**: verify both values in Qonto → Settings → Integrations → API, update `.env`.
 

@@ -58,11 +58,37 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return out
 
 
-def _write_env_file(path: Path, values: dict[str, str]) -> None:
-    lines = [
+def _env_suffix(org_id: str) -> str:
+    """Normalize an org id like 'welance-srl' to an env-var suffix: 'WELANCE_SRL'.
+
+    Only [A-Z0-9_] is permitted; anything else becomes '_'. Collapses runs.
+    """
+    import re
+
+    up = (org_id or "").upper()
+    cleaned = re.sub(r"[^A-Z0-9]+", "_", up).strip("_")
+    return cleaned or "ORG"
+
+
+def _write_env_file(
+    path: Path,
+    values: dict[str, str],
+    orgs: list[dict[str, str]],
+) -> None:
+    lines: list[str] = [
         "# Qonto Business API (https://thirdparty.qonto.com)",
-        f"QONTO_LOGIN={values.get('QONTO_LOGIN', '')}",
-        f"QONTO_SECRET_KEY={values.get('QONTO_SECRET_KEY', '')}",
+        "# Per-org credentials — one pair per legal entity. The invoicer.yaml",
+        "# `orgs:` block references these by env-var name.",
+    ]
+    for org in orgs:
+        suffix = _env_suffix(org["id"])
+        lines += [
+            "",
+            f"# Org: {org['id']}  ({org.get('country', '?')})",
+            f"QONTO_LOGIN_{suffix}={org.get('login', '')}",
+            f"QONTO_SECRET_KEY_{suffix}={org.get('secret', '')}",
+        ]
+    lines += [
         "",
         "# Clockify API (https://clockify.me/developers-api)",
         f"CLOCKIFY_API_KEY={values.get('CLOCKIFY_API_KEY', '')}",
@@ -78,7 +104,77 @@ def _write_env_file(path: Path, values: dict[str, str]) -> None:
     path.write_text("\n".join(lines) + "\n")
 
 
-def _prompt_env(existing: dict[str, str]) -> dict[str, str]:
+def _prompt_orgs(existing: dict[str, str]) -> list[dict[str, str]]:
+    """Prompt for one or more Qonto orgs. Returns a list of dicts with
+    id / country / login / secret. Pre-fills defaults from existing .env
+    values when possible (legacy QONTO_LOGIN / QONTO_SECRET_KEY → first org).
+    """
+    orgs: list[dict[str, str]] = []
+    typer.secho("== Qonto ==", fg="cyan", bold=True)
+    typer.echo(
+        "Each Qonto org (legal entity) needs its own API credentials — "
+        "Qonto's API is per-org-scoped. If you only invoice from one entity, "
+        "just add one org here.\n"
+    )
+
+    while True:
+        idx = len(orgs) + 1
+        typer.secho(f"-- Qonto org #{idx} --", fg="cyan")
+
+        # For the first org, pre-fill id + login from legacy env vars if present.
+        default_login = ""
+        if idx == 1:
+            default_login = existing.get("QONTO_LOGIN", "")
+        # Also try per-org keys if re-running init on a multi-org setup.
+        # The user may have already added a few orgs.
+
+        org_id = questionary.text(
+            "Short id for this org (e.g. 'welance-srl', 'welance-gmbh'):",
+        ).ask() or ""
+        org_id = org_id.strip()
+        if not org_id:
+            typer.echo("Empty org id — skipping.", err=True)
+            break
+
+        country = questionary.text(
+            "Country (2-letter code, e.g. IT, DE, FR):",
+        ).ask() or ""
+        country = country.strip().upper()
+
+        # If re-running init, honor existing QONTO_LOGIN_<SUFFIX> as default.
+        suffix = _env_suffix(org_id)
+        pre_login = existing.get(f"QONTO_LOGIN_{suffix}") or default_login
+        pre_secret = existing.get(f"QONTO_SECRET_KEY_{suffix}") or (
+            existing.get("QONTO_SECRET_KEY", "") if idx == 1 else ""
+        )
+
+        login = questionary.text(
+            f"Qonto login slug for {org_id} (e.g. 'acme-1234'):",
+            default=pre_login,
+        ).ask() or ""
+        secret = questionary.password(
+            f"Qonto API secret for {org_id}:",
+            default=pre_secret,
+        ).ask() or ""
+
+        orgs.append(
+            {
+                "id": org_id,
+                "country": country,
+                "login": login.strip(),
+                "secret": secret.strip(),
+            }
+        )
+
+        if not questionary.confirm(
+            "Add another Qonto org?", default=False
+        ).ask():
+            break
+
+    return orgs
+
+
+def _prompt_env(existing: dict[str, str]) -> tuple[dict[str, str], list[dict[str, str]]]:
     def ask(key: str, label: str, secret: bool = False, optional: bool = False) -> str:
         default = existing.get(key, "")
         prompt_fn = questionary.password if secret else questionary.text
@@ -87,9 +183,7 @@ def _prompt_env(existing: dict[str, str]) -> dict[str, str]:
         return (answer or "").strip()
 
     typer.echo()
-    typer.secho("== Qonto ==", fg="cyan", bold=True)
-    qonto_login = ask("QONTO_LOGIN", "Qonto org slug (e.g. 'acme-1234')")
-    qonto_secret = ask("QONTO_SECRET_KEY", "Qonto API secret", secret=True)
+    orgs = _prompt_orgs(existing)
 
     typer.echo()
     typer.secho("== Clockify ==", fg="cyan", bold=True)
@@ -114,31 +208,29 @@ def _prompt_env(existing: dict[str, str]) -> dict[str, str]:
         optional=True,
     )
 
-    return {
-        "QONTO_LOGIN": qonto_login,
-        "QONTO_SECRET_KEY": qonto_secret,
+    values = {
         "CLOCKIFY_API_KEY": clockify_key,
         "CLOCKIFY_WORKSPACE_ID": clockify_ws,
         "GMAIL_SENDER": gmail_sender,
         "GMAIL_SENDER_NAME": gmail_name,
         "ANTHROPIC_API_KEY": anthropic_key,
     }
+    return values, orgs
 
 
-def _test_qonto(env: dict[str, str]) -> tuple[bool, str]:
+def _test_qonto_org(org: dict[str, str]) -> tuple[bool, str]:
     try:
         import httpx
 
-        login = env["QONTO_LOGIN"]
-        secret = env["QONTO_SECRET_KEY"]
         r = httpx.get(
             "https://thirdparty.qonto.com/v2/organization",
-            headers={"Authorization": f"{login}:{secret}"},
+            headers={"Authorization": f"{org['login']}:{org['secret']}"},
             timeout=15,
         )
         if r.status_code == 200:
-            org = r.json().get("organization", {})
-            return True, f"org: {org.get('legal_name') or org.get('name', '?')}"
+            data = r.json().get("organization", {})
+            name = data.get("legal_name") or data.get("name", "?")
+            return True, f"org: {name}"
         return False, f"HTTP {r.status_code}: {r.text[:120]}"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
@@ -259,11 +351,11 @@ def run_init() -> None:
         typer.echo(f"Found existing .env at {env_path} ({len(existing)} keys) — using values as defaults.")
     else:
         typer.echo(f"No .env at {env_path} — let's create one.")
-    new_values = _prompt_env(existing)
+    new_values, new_orgs = _prompt_env(existing)
     if questionary.confirm(
         f"\nWrite these values to {env_path.name}?", default=True
     ).ask():
-        _write_env_file(env_path, new_values)
+        _write_env_file(env_path, new_values, new_orgs)
         typer.secho(f"✓ Wrote {env_path}", fg="green")
     else:
         typer.secho("Aborted — .env not written.", fg="yellow")
@@ -273,6 +365,12 @@ def run_init() -> None:
     for k, v in new_values.items():
         if v:
             os.environ[k] = v
+    for org in new_orgs:
+        suffix = _env_suffix(org["id"])
+        if org.get("login"):
+            os.environ[f"QONTO_LOGIN_{suffix}"] = org["login"]
+        if org.get("secret"):
+            os.environ[f"QONTO_SECRET_KEY_{suffix}"] = org["secret"]
 
     # --- invoicer.yaml ---
     typer.echo()
@@ -299,10 +397,19 @@ def run_init() -> None:
     typer.echo()
     typer.secho("== Testing connections ==", fg="cyan", bold=True)
 
+    # One Qonto test per org so the user sees which credentials work.
+    for org in new_orgs:
+        label = f"Qonto [{org['id']}]".ljust(28)
+        typer.echo(f"  {label} ... ", nl=False)
+        ok, msg = _test_qonto_org(org)
+        if ok:
+            typer.secho(f"✓ {msg}", fg="green")
+        else:
+            typer.secho(f"✗ {msg}", fg="red")
+
     tests = [
-        ("Qonto      ", lambda: _test_qonto(new_values)),
-        ("Clockify   ", lambda: _test_clockify(new_values)),
-        ("Anthropic  ", lambda: _test_anthropic(new_values)),
+        ("Clockify   ".ljust(28), lambda: _test_clockify(new_values)),
+        ("Anthropic  ".ljust(28), lambda: _test_anthropic(new_values)),
     ]
     for label, fn in tests:
         typer.echo(f"  {label} ... ", nl=False)
@@ -324,9 +431,30 @@ def run_init() -> None:
         else:
             typer.secho(f"✗ {msg}", fg="red")
 
+    # --- invoicer.yaml orgs block hint ---
+    if new_orgs:
+        typer.echo()
+        typer.secho("== invoicer.yaml `orgs:` block ==", fg="cyan", bold=True)
+        typer.echo(
+            "Your .env now has the per-org Qonto credentials. Make sure "
+            "your invoicer.yaml references them via an `orgs:` block. If "
+            "it doesn't yet, paste this snippet at the top of the file:\n"
+        )
+        snippet = ["orgs:"]
+        for org in new_orgs:
+            suffix = _env_suffix(org["id"])
+            snippet += [
+                f"  - id: {org['id']}",
+                f"    country: {org['country']}",
+                f"    login_env: QONTO_LOGIN_{suffix}",
+                f"    secret_env: QONTO_SECRET_KEY_{suffix}",
+            ]
+        typer.secho("\n".join(snippet), fg="yellow")
+
     typer.echo()
     typer.secho("== Next steps ==", fg="cyan", bold=True)
-    typer.echo("  1. Edit invoicer.yaml to add your Clockify→Qonto client mappings.")
+    typer.echo("  1. Edit invoicer.yaml — add the `orgs:` block above if it isn't there, plus Clockify→Qonto client mappings.")
     typer.echo("  2. Run `invoicer discover` to see Clockify + Qonto inventories.")
-    typer.echo("  3. Run `invoicer draft <project-alias> --month YYYY-MM` to build your first draft.")
+    typer.echo("  3. Run `invoicer defaults set` to cache a default org and locale.")
+    typer.echo("  4. Run `invoicer draft <project-alias> --month YYYY-MM` to build your first draft.")
     typer.echo()

@@ -1,6 +1,6 @@
 [project]
 name = "r001-05-invoicer"
-version = "0.3.0"
+version = "0.4.0"
 description = "A tiny honest CLI that turns Clockify hours into Qonto client invoices, with pre-mutation previews, typed-confirmation gates, and a Gmail-drafts step that never sends directly."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -66,15 +66,17 @@ Concretely:
 ## Commands
 
 ```
-invoicer init                                  # Interactive first-run setup
-invoicer help [topic]                          # Long-form help: getting-started, workflow, italy-sdi, troubleshooting, security
+invoicer init                                  # Interactive first-run setup (multi-org aware)
+invoicer help [topic]                          # Long-form help: getting-started, workflow, italy-sdi, troubleshooting, security, multi-org
 invoicer update                                # git pull + reinstall (for editable installs from a clone)
-invoicer discover                              # List Clockify + Qonto inventories
-invoicer client add                            # Paste company text → Haiku extracts → review → POST /v2/clients to Qonto
-invoicer client add --no-ai                    # Same, but answer stepped field prompts manually (no LLM, no Anthropic key)
-invoicer draft <project> --month YYYY-MM       # Build a Qonto draft invoice (project: alias, name, or id — fuzzy matched)
-invoicer finalize <invoice_id>                 # Finalize a draft. IRREVERSIBLE. Typed confirmation.
-invoicer mail-draft <invoice_id>               # Download PDF + CSV, create Gmail draft
+invoicer defaults                              # Show cached defaults (org, locale, …)
+invoicer defaults set [--ai]                   # Walk through prompts (or describe in NL) to edit defaults
+invoicer defaults unset <key>                  # Remove one default
+invoicer discover [--org X]                    # List Clockify + Qonto inventories (Qonto list is per-org)
+invoicer client add [--org X] [--no-ai]        # Create a Qonto client — Haiku extraction by default, --no-ai for manual
+invoicer draft <project> --month YYYY-MM [--org X]   # Build a Qonto draft invoice — org auto-picked from project/defaults
+invoicer finalize <invoice_id> [--org X]       # Finalize a draft. IRREVERSIBLE. Typed confirmation.
+invoicer mail-draft <invoice_id> [--org X]     # Download PDF + CSV, create Gmail draft
 ```
 
 ## Requirements
@@ -115,11 +117,13 @@ Required variables:
 |---|---|
 | `CLOCKIFY_API_KEY` | Clockify → profile → API |
 | `CLOCKIFY_WORKSPACE_ID` | Clockify → workspace settings, or use `invoicer discover` |
-| `QONTO_LOGIN` | Your Qonto organization slug (e.g. `acme-5678`) |
-| `QONTO_SECRET_KEY` | Qonto → Settings → Integrations → API |
+| `QONTO_LOGIN_<ORG>` | Qonto org slug, per legal entity (e.g. `QONTO_LOGIN_WELANCE_SRL`). Referenced by `invoicer.yaml orgs: login_env`. |
+| `QONTO_SECRET_KEY_<ORG>` | Qonto API secret, per legal entity. Referenced by `invoicer.yaml orgs: secret_env`. |
 | `GMAIL_SENDER` | The Gmail address that will own the drafts (e.g. `you@yourdomain.com`) |
 | `GMAIL_SENDER_NAME` | Optional. Display name used in the email signature. |
-| `ANTHROPIC_API_KEY` | Optional. Only needed for `invoicer client add` in its default (AI) mode. Not required with `--no-ai`. |
+| `ANTHROPIC_API_KEY` | Optional. Only needed for `invoicer client add` in its default (AI) mode and for `invoicer defaults set --ai`. Not required with `--no-ai`. |
+
+> **Multi-org:** one pair of `QONTO_LOGIN_X` / `QONTO_SECRET_KEY_X` variables per legal entity (e.g. SRL + GmbH). `invoicer init` walks you through adding more than one. `invoicer.yaml`'s `orgs:` block maps each entity id to the env-var names that hold its credentials, so the actual secrets stay in `.env`. Single-org legacy mode (plain `QONTO_LOGIN` / `QONTO_SECRET_KEY` with no `orgs:` block in `invoicer.yaml`) still works for existing installs.
 
 ### 2. Gmail API OAuth (one-time, ~15 minutes)
 

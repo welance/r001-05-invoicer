@@ -49,8 +49,8 @@ class TestListTopics:
             assert cmd in captured.out, (
                 f"Command {cmd!r} missing from `invoicer help` output"
             )
-        # Sub-commands from the `client` group
-        for sub in ["client add"]:
+        # Sub-commands from the `client` and `defaults` groups
+        for sub in ["client add", "defaults set", "defaults unset"]:
             assert sub in captured.out, (
                 f"Subcommand {sub!r} missing from `invoicer help` output"
             )

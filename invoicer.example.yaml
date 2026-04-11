@@ -1,24 +1,66 @@
 # invoicer.example.yaml — copy this to invoicer.yaml and fill in your own data.
 # Qonto is the single source of truth for client info; this file only stores
-# the Clockify → Qonto mapping and the per-project billing terms.
+# which Qonto org (for multi-entity setups), the Clockify → Qonto mapping,
+# and the per-project billing terms.
 
+# -------- Orgs -------------------------------------------------------------
+# Each Qonto organization you invoice from. Each org has its own login slug
+# and API secret — Qonto's API is per-org-scoped, not per-user, so two legal
+# entities = two credential pairs. The env var names below point at keys in
+# your .env file; `invoicer init` walks you through creating them.
+#
+# If you only have one org you can omit this section entirely; the tool then
+# reads QONTO_LOGIN / QONTO_SECRET_KEY from the environment directly (legacy
+# single-org mode).
+orgs:
+  - id: welance-srl
+    country: IT                         # drives e-invoicing behavior — IT adds SDI payment_reporting codes (TP02/MP05), anything else omits them
+    login_env: QONTO_LOGIN_SRL          # name of the .env key holding this org's login slug
+    secret_env: QONTO_SECRET_KEY_SRL    # name of the .env key holding this org's API secret
+  - id: welance-gmbh
+    country: DE                         # German invoices — no SDI codes, no Italian fields
+    login_env: QONTO_LOGIN_GMBH
+    secret_env: QONTO_SECRET_KEY_GMBH
+
+# -------- Defaults ---------------------------------------------------------
+# Answers the tool learned from your previous runs so it doesn't re-prompt
+# for routing questions every time. Managed via `invoicer defaults set` —
+# don't edit by hand unless you know what you're doing.
+#
+# Only *routing* answers are cached here. Confirmation gates (pre-mutation
+# panels, typed invoice-number on finalize) are NEVER cached; those must be
+# answered every run. See CLAUDE.md § Safety invariants.
+defaults:
+  org: welance-srl                      # default Qonto org when --org is not passed
+  locale: en                            # default Qonto client locale (it | en | de)
+
+# -------- Client map -------------------------------------------------------
+# Clockify client ids → Qonto client ids. The optional `org:` field scopes
+# a mapping to a specific Qonto organization — useful when the same Clockify
+# client exists in both the SRL and GmbH Qonto accounts as distinct entities.
+# Get ids by running:  invoicer discover
 clients:
-  # Map Clockify client ids → Qonto client ids.
-  # Get ids by running:  invoicer discover
   - clockify_id: "clockify_client_id_here"
     qonto_id: "qonto_client_uuid_here"
+    org: welance-srl                    # optional; omit if you only have one org
+  - clockify_id: "other_clockify_client_id"
+    qonto_id: "other_qonto_client_uuid"
+    org: welance-gmbh
 
+# -------- Projects ---------------------------------------------------------
+# Keyed by Clockify project id (the long hex string).
 projects:
-  # Keyed by Clockify project id (the long hex string).
   "clockify_project_id_here":
     alias: "shortname"                              # used as: invoicer draft shortname --month YYYY-MM
     name: "Human-readable project name"
+    org: welance-srl                                # optional; pins this project to one org — skips the org prompt
     rate_eur_per_hour: 85
-    vat_rate: 0                                     # 0 for intra-EU B2B reverse charge; 22 for Italian domestic; etc.
+    vat_rate: 0                                     # 0 for intra-EU B2B reverse charge; 22 for Italian domestic; 19 for German domestic
     vat_exemption_reason: "N3.2"                    # Italian SDI code — REQUIRED when vat_rate is 0 on Italian orgs.
                                                     # N2.1 = non-taxable services under art. 7-ter DPR 633/72
                                                     # N3.2 = non-taxable intra-community supplies (art. 41 DL 331/93)
                                                     # N6.7 = specific reverse charge scenarios
+                                                    # German reverse-charge (§13b UStG) 0% lines do not need this.
                                                     # ⚠️ Consult your accountant before choosing.
     description_template: "Consulting services — {month_name} {year}"
     payment_terms_days: 30                          # Due date = issue_date + this

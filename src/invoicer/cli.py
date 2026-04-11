@@ -10,7 +10,101 @@ from .config import load_env
 
 app = typer.Typer(help="Clockify → Qonto invoicing tool", no_args_is_help=True)
 client_app = typer.Typer(help="Manage Qonto clients", no_args_is_help=True)
+defaults_app = typer.Typer(
+    help="View and edit cached defaults (org, locale, …) stored in invoicer.yaml",
+    no_args_is_help=False,
+    invoke_without_command=True,
+)
 app.add_typer(client_app, name="client")
+app.add_typer(defaults_app, name="defaults")
+
+
+def _resolve_org(
+    cli_override: str | None,
+    project_org: str | None = None,
+) -> tuple[str | None, bool]:
+    """Pick the active Qonto org for this command invocation.
+
+    Returns (org_id, was_prompted). `org_id` is None when invoicer.yaml has
+    no `orgs:` block (legacy single-org mode — caller skips `activate_org`
+    and falls back to raw QONTO_LOGIN / QONTO_SECRET_KEY env vars).
+    `was_prompted` is True only when we interactively asked the user, so the
+    caller can offer to save the pick as the new default.
+
+    Priority chain:
+      1. --org CLI flag
+      2. project-level `org:` (only for draft)
+      3. defaults.org from invoicer.yaml
+      4. single-org list → silently pick it
+      5. questionary.select prompt
+    """
+    from . import project_config
+
+    orgs = project_config.list_orgs()
+    if cli_override:
+        return (cli_override, False)
+    if project_org:
+        return (project_org, False)
+    if not orgs:
+        # Legacy single-org mode: no `orgs:` block. Validate that the
+        # direct env vars are set so the user gets a clean error rather
+        # than a KeyError on first Qonto call.
+        if not os.environ.get("QONTO_LOGIN") or not os.environ.get("QONTO_SECRET_KEY"):
+            raise RuntimeError(
+                "invoicer.yaml has no `orgs:` block and QONTO_LOGIN / "
+                "QONTO_SECRET_KEY are not set in .env. Either set them for "
+                "single-org mode, or add an `orgs:` block to invoicer.yaml "
+                "for multi-org."
+            )
+        return (None, False)
+
+    defaults = project_config.get_defaults()
+    default_org = defaults.get("org")
+    if default_org and any(o.get("id") == default_org for o in orgs):
+        return (default_org, False)
+
+    if len(orgs) == 1:
+        return (orgs[0]["id"], False)
+
+    import questionary
+
+    choices = [
+        questionary.Choice(
+            title=f"{o['id']}  ({o.get('country', '?')})",
+            value=o["id"],
+        )
+        for o in orgs
+    ]
+    picked = questionary.select("Which Qonto org?", choices=choices).ask()
+    if not picked:
+        typer.echo("Aborted — no org selected.", err=True)
+        raise typer.Exit(1)
+    return (picked, True)
+
+
+def _maybe_offer_save_as_default(key: str, value: str, prompted: bool) -> None:
+    """After a command that had to prompt the user for a routing answer,
+    offer to remember it as a default. Never offers if the answer was read
+    from config (--org flag, project cfg, existing default, single-org).
+    Confirmation gates (pre-mutation panels, finalize typed confirmation)
+    are NEVER cached — only routing answers land here.
+    """
+    if not prompted:
+        return
+    import questionary
+
+    from . import defaults as defaults_mod
+
+    if not questionary.confirm(
+        f"Save {value!r} as the default {key} for future runs?",
+        default=False,
+    ).ask():
+        return
+    defaults_mod.set_default(key, value)
+    typer.echo(
+        f"→ Saved defaults.{key} = {value!r} to invoicer.yaml",
+        err=True,
+    )
 
 
 @app.command()
@@ -35,6 +129,182 @@ def help(
         list_topics()
         return
     show_topic(topic)
+
+
+@defaults_app.callback(invoke_without_command=True)
+def _defaults_root(ctx: typer.Context) -> None:
+    """Show current defaults when `invoicer defaults` is run with no subcommand."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from . import defaults as defaults_mod
+
+    current = defaults_mod.read_all()
+    if not current:
+        typer.echo(
+            "No defaults set. Run `invoicer defaults set` to add some."
+        )
+        return
+
+    from rich.console import Console
+    from rich.table import Table
+
+    table = Table(title="invoicer defaults", title_style="bold green")
+    table.add_column("Key", style="cyan")
+    table.add_column("Value")
+    for k in defaults_mod.KNOWN_KEYS:
+        if k in current:
+            table.add_row(k, str(current[k]))
+    Console().print(table)
+    typer.echo(
+        "\nStored in invoicer.yaml under `defaults:`. "
+        "Edit via `invoicer defaults set` or `invoicer defaults unset <key>`.",
+        err=True,
+    )
+
+
+@defaults_app.command("set")
+def defaults_set(
+    ai: bool = typer.Option(
+        False,
+        "--ai",
+        help="Describe the defaults in free-form text; Haiku maps it to keys.",
+    ),
+) -> None:
+    """Edit cached defaults. Walks known keys with prompts, then confirms.
+
+    With --ai, the tool asks for a single free-form description and uses
+    Haiku (with an enum-constrained schema so it can't hallucinate org
+    names) to propose a set of defaults. You confirm the diff before
+    anything is written to invoicer.yaml.
+    """
+    import questionary
+
+    from . import defaults as defaults_mod
+    from . import project_config
+
+    load_env()
+
+    current = defaults_mod.read_all()
+    orgs = project_config.list_orgs()
+    known_org_ids = [o.get("id", "?") for o in orgs]
+
+    if ai:
+        if not known_org_ids:
+            typer.echo(
+                "AI mode needs at least one org declared in invoicer.yaml "
+                "`orgs:`. Add one first, or use `invoicer defaults set` "
+                "without --ai.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+        from .llm import extract_defaults
+
+        typer.echo(
+            "Describe the defaults you want in one or two sentences. "
+            "Example: \"use the GmbH as default and English locale\".",
+            err=True,
+        )
+        text = questionary.text("Your description:").ask()
+        if not text or not text.strip():
+            typer.echo("No description given. Aborted.", err=True)
+            raise typer.Exit(0)
+
+        typer.echo("Asking Haiku to map that to defaults keys...", err=True)
+        proposed = extract_defaults(
+            text,
+            known_org_ids=known_org_ids,
+            locale_choices=list(defaults_mod.LOCALE_CHOICES),
+        )
+        # Drop empty fields that the model may have filled with ""
+        proposed = {k: v for k, v in proposed.items() if v}
+    else:
+        proposed = {}
+        typer.echo("\n== Editing defaults (press Enter to keep the current value) ==\n", err=True)
+
+        if known_org_ids:
+            org_choices = [questionary.Choice(title=oid, value=oid) for oid in known_org_ids]
+            current_org = current.get("org", "")
+            picked_org = questionary.select(
+                f"Default org (current: {current_org or '(unset)'}):",
+                choices=[*org_choices, questionary.Choice(title="(leave unset)", value="")],
+                default=current_org if current_org in known_org_ids else None,
+            ).ask()
+            if picked_org:
+                proposed["org"] = picked_org
+
+        current_locale = current.get("locale", "")
+        locale_choices = [
+            questionary.Choice(title=loc, value=loc)
+            for loc in defaults_mod.LOCALE_CHOICES
+        ] + [questionary.Choice(title="(leave unset)", value="")]
+        picked_locale = questionary.select(
+            f"Default locale (current: {current_locale or '(unset)'}):",
+            choices=locale_choices,
+            default=current_locale if current_locale in defaults_mod.LOCALE_CHOICES else None,
+        ).ask()
+        if picked_locale:
+            proposed["locale"] = picked_locale
+
+        gmail = questionary.text(
+            f"Default gmail_sender (current: {current.get('gmail_sender', '')!r} — empty to leave unset):",
+            default=current.get("gmail_sender", ""),
+        ).ask()
+        if gmail and gmail.strip():
+            proposed["gmail_sender"] = gmail.strip()
+
+    # Validate everything before showing the diff.
+    for k, v in proposed.items():
+        try:
+            defaults_mod.validate(k, v)
+        except ValueError as e:
+            typer.echo(f"Invalid value for {k}: {e}", err=True)
+            raise typer.Exit(1) from e
+
+    # Compute diff
+    merged = {**current, **proposed}
+    changes = [
+        (k, current.get(k, ""), merged.get(k, ""))
+        for k in defaults_mod.KNOWN_KEYS
+        if current.get(k) != merged.get(k)
+    ]
+    if not changes:
+        typer.echo("No changes.", err=True)
+        raise typer.Exit(0)
+
+    typer.echo("\n== Proposed changes to invoicer.yaml defaults ==")
+    for k, old, new in changes:
+        old_s = old or "(unset)"
+        new_s = new or "(unset)"
+        typer.echo(f"  {k}: {old_s} → {new_s}")
+
+    if not questionary.confirm(
+        "Write these changes to invoicer.yaml?", default=False
+    ).ask():
+        typer.echo("Aborted.", err=True)
+        raise typer.Exit(0)
+
+    for k, _, new in changes:
+        if new:
+            defaults_mod.set_default(k, new)
+    typer.echo("\n✓ Defaults updated.")
+
+
+@defaults_app.command("unset")
+def defaults_unset(
+    key: str = typer.Argument(..., help="Default key to remove (org, locale, gmail_sender)"),
+) -> None:
+    """Remove one default from invoicer.yaml. No-op if it wasn't set."""
+    from . import defaults as defaults_mod
+
+    load_env()
+
+    try:
+        defaults_mod.unset_default(key)
+    except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    typer.echo(f"✓ Unset defaults.{key}.")
 
 
 @app.command()
@@ -118,8 +388,16 @@ def update() -> None:
 
 
 @app.command()
-def discover() -> None:
+def discover(
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Which Qonto org to list clients from. Prompted if you have multiple.",
+    ),
+) -> None:
     """List Clockify projects/clients and Qonto clients to fill invoicer.yaml."""
+    from . import project_config
+
     load_env()
 
     typer.echo("\n== Clockify clients ==")
@@ -133,7 +411,12 @@ def discover() -> None:
             f"  (client_id={p.get('clientId', '-')})"
         )
 
-    typer.echo("\n== Qonto clients ==")
+    org_id, _ = _resolve_org(cli_override=org)
+    if org_id:
+        project_config.activate_org(org_id)
+        typer.echo(f"\n== Qonto clients ({org_id}) ==")
+    else:
+        typer.echo("\n== Qonto clients ==")
     for c in qonto.list_clients():
         name = c.get("name") or f"{c.get('first_name', '')} {c.get('last_name', '')}".strip()
         typer.echo(f"  {c['id']}  {name}")
@@ -144,11 +427,20 @@ def client_add(
     from_file: Path = typer.Option(
         None, "--from-file", "-f", help="Read source text from a file (AI mode only)"
     ),
-    locale: str = typer.Option("en", help="Qonto client locale: en, it, de, fr, es"),
+    locale: str = typer.Option(
+        None,
+        "--locale",
+        help="Qonto client locale: it, en, de (defaults: defaults.locale in invoicer.yaml, or en).",
+    ),
     no_ai: bool = typer.Option(
         False,
         "--no-ai",
         help="Skip LLM extraction; answer stepped field prompts manually.",
+    ),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Which Qonto org to create this client in. Prompted if ambiguous.",
     ),
 ) -> None:
     """Create a new Qonto client.
@@ -160,7 +452,19 @@ def client_add(
     """
     import questionary
 
+    from . import project_config
+
     load_env()
+
+    # Resolve org early so any Qonto call hits the right account.
+    org_id, org_was_prompted = _resolve_org(cli_override=org)
+    if org_id:
+        project_config.activate_org(org_id)
+        typer.echo(f"→ Qonto org: {org_id}", err=True)
+
+    # Locale resolution: --locale > defaults.locale > "en"
+    if locale is None:
+        locale = project_config.get_defaults().get("locale", "en")
 
     if no_ai:
         if from_file:
@@ -224,12 +528,21 @@ def client_add(
     typer.echo(f"\n✓ Created Qonto client: {created.get('id')}")
     typer.echo(f"  Name: {created.get('name')}")
 
+    if org_id:
+        _maybe_offer_save_as_default("org", org_id, org_was_prompted)
+
 
 @app.command()
 def draft(
     project: str = typer.Argument(..., help="Project alias from invoicer.yaml, or raw Clockify project id"),
     month: str = typer.Option(..., help="Billing month, YYYY-MM"),
     purchase_order: str = typer.Option(None, help="Optional PO / reference printed on the invoice"),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Qonto org id from invoicer.yaml `orgs:`. Overrides project-level and default. "
+        "Prompted if ambiguous.",
+    ),
 ) -> None:
     """Create a Qonto draft invoice for a Clockify project + month."""
     from calendar import monthrange
@@ -304,6 +617,17 @@ def draft(
     )
     project_name_cfg = proj_cfg.get("name", project_id)
 
+    # Resolve and activate Qonto org BEFORE any Qonto API call.
+    org_id, org_was_prompted = _resolve_org(
+        cli_override=org,
+        project_org=proj_cfg.get("org"),
+    )
+    org_country: str | None = None
+    if org_id:
+        org_cfg = project_config.activate_org(org_id)
+        org_country = (org_cfg.get("country") or "").upper() or None
+        typer.echo(f"→ Qonto org: {org_id}" + (f"  ({org_country})" if org_country else ""), err=True)
+
     # Clockify → Qonto client resolution
     typer.echo("Fetching Clockify project...", err=True)
     cp = clockify.get_project(project_id)
@@ -311,7 +635,9 @@ def draft(
     if not clockify_client_id:
         typer.echo(f"Clockify project {project_id} has no client assigned.", err=True)
         raise typer.Exit(1)
-    qonto_client_id = project_config.resolve_qonto_client_id(clockify_client_id)
+    qonto_client_id = project_config.resolve_qonto_client_id(
+        clockify_client_id, org_id=org_id
+    )
 
     typer.echo("Fetching Qonto client...", err=True)
     qc = qonto.get_client(qonto_client_id)
@@ -319,7 +645,7 @@ def draft(
 
     typer.echo("Fetching Qonto main bank account...", err=True)
     bank = qonto.get_main_bank_account()
-    org = qonto.get_organization()
+    qonto_org = qonto.get_organization()
 
     # Aggregate
     typer.echo(
@@ -365,6 +691,15 @@ def draft(
             )
         )
 
+    # SDI payment_reporting codes belong only on Italian invoices. If the
+    # active org is non-IT (or legacy-mode with no declared country), omit
+    # the field entirely — German/EU invoices must not carry Italian SDI
+    # metadata.
+    payment_reporting = (
+        {"conditions": "TP02", "method": "MP05"}
+        if org_country == "IT"
+        else None
+    )
     payload = qonto.build_invoice_payload(
         client_id=qonto_client_id,
         issue_date=issue_date,
@@ -372,9 +707,10 @@ def draft(
         items=items,
         iban=bank["iban"],
         bic=bank.get("bic"),
-        beneficiary_name=org.get("legal_name"),
+        beneficiary_name=qonto_org.get("legal_name"),
         purchase_order=purchase_order,
         status="draft",
+        payment_reporting=payment_reporting,
     )
 
     # Pre-mutation summary
@@ -412,17 +748,33 @@ def draft(
     if created.get("invoice_url"):
         typer.echo(f"  url:    {created['invoice_url']}")
 
+    # After a successful draft, if we had to prompt the user for the org,
+    # offer to remember it. Only fires when `org_was_prompted` is True.
+    if org_id:
+        _maybe_offer_save_as_default("org", org_id, org_was_prompted)
+
 
 @app.command()
 def finalize(
     invoice_id: str = typer.Argument(..., help="Qonto invoice id (UUID)"),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Qonto org the invoice belongs to. Prompted if ambiguous.",
+    ),
 ) -> None:
     """Finalize a Qonto draft invoice. IRREVERSIBLE — locks number, queues SDI."""
     import questionary
 
+    from . import project_config
     from .summary import print_finalize_summary
 
     load_env()
+
+    org_id, _ = _resolve_org(cli_override=org)
+    if org_id:
+        project_config.activate_org(org_id)
+
     inv = qonto.get_invoice(invoice_id)
     current_status = inv.get("status", "")
     if current_status != "draft":
@@ -460,6 +812,11 @@ def mail_draft(
     invoice_id: str = typer.Argument(..., help="Qonto invoice id (UUID)"),
     to: str = typer.Option(None, help="Override recipient (default: client.email on Qonto)"),
     cc_self: bool = typer.Option(True, help="CC GMAIL_SENDER for your own paper trail"),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Qonto org the invoice belongs to. Prompted if ambiguous.",
+    ),
 ) -> None:
     """Download the invoice PDF and create a Gmail draft with it attached.
 
@@ -467,11 +824,16 @@ def mail_draft(
     """
     import questionary
 
+    from . import project_config
     from .csv_export import build_invoice_csv
     from .gmail import build_invoice_email, create_draft
     from .summary import print_mail_draft_summary
 
     load_env()
+
+    org_id, _ = _resolve_org(cli_override=org)
+    if org_id:
+        project_config.activate_org(org_id)
 
     inv = qonto.get_invoice(invoice_id)
     if inv.get("status") == "draft":

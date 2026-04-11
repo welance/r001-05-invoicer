@@ -203,18 +203,37 @@ class TestBuildInvoicePayload:
         assert pm["bic"] == "BANKIT22"
         assert pm["beneficiary_name"] == "ACME SRL"
 
-    def test_payment_reporting_for_italy(self):
+    def test_payment_reporting_included_when_passed(self):
+        """Italian orgs need SDI codes — the caller (not this builder) decides.
+        Regression: before 0.4.0 this builder hardcoded TP02/MP05 as defaults,
+        which silently shipped Italian codes on German invoices.
+        """
         payload = build_invoice_payload(
             client_id="c",
             issue_date="2026-04-01",
             due_date="2026-05-01",
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
+            payment_reporting={"conditions": "TP02", "method": "MP05"},
         )
         assert payload["payment_reporting"] == {
             "conditions": "TP02",
             "method": "MP05",
         }
+
+    def test_payment_reporting_omitted_when_not_passed(self):
+        """Non-Italian orgs (e.g. welance Ventures GmbH) must NOT have a
+        payment_reporting field — Qonto's German invoices reject SDI codes.
+        The builder omits the field unless the caller explicitly passes one.
+        """
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[self._minimal_item()],
+            iban="DE89370400440532013000",
+        )
+        assert "payment_reporting" not in payload
 
     def test_purchase_order_optional(self):
         payload = build_invoice_payload(

@@ -1,8 +1,19 @@
 """Unit tests for the invoicer.yaml loader and fuzzy project matcher."""
 
+import os
 from unittest.mock import patch
 
-from invoicer.project_config import _normalize, find_projects
+import pytest
+
+from invoicer.project_config import (
+    _normalize,
+    activate_org,
+    find_projects,
+    get_defaults,
+    get_org,
+    list_orgs,
+    resolve_qonto_client_id,
+)
 
 _YAML_FIXTURE = {
     "clients": [],
@@ -104,3 +115,111 @@ class TestFindProjects:
         result = self._find("r005-01")
         assert len(result) == 1
         assert result[0][0] == "pid_aaa"
+
+
+_MULTI_ORG_FIXTURE = {
+    "orgs": [
+        {
+            "id": "welance-srl",
+            "country": "IT",
+            "login_env": "QONTO_LOGIN_SRL",
+            "secret_env": "QONTO_SECRET_KEY_SRL",
+        },
+        {
+            "id": "welance-gmbh",
+            "country": "DE",
+            "login_env": "QONTO_LOGIN_GMBH",
+            "secret_env": "QONTO_SECRET_KEY_GMBH",
+        },
+    ],
+    "defaults": {
+        "org": "welance-srl",
+        "locale": "it",
+    },
+    "clients": [
+        {
+            "clockify_id": "cl_shared",
+            "qonto_id": "q_srl_abc",
+            "org": "welance-srl",
+        },
+        {
+            "clockify_id": "cl_shared",
+            "qonto_id": "q_gmbh_xyz",
+            "org": "welance-gmbh",
+        },
+        {
+            "clockify_id": "cl_orgless",
+            "qonto_id": "q_legacy_123",
+        },
+    ],
+}
+
+
+class TestListOrgs:
+    def test_lists_orgs_when_present(self):
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            orgs = list_orgs()
+        assert len(orgs) == 2
+        assert orgs[0]["id"] == "welance-srl"
+
+    def test_empty_when_no_orgs_block(self):
+        with patch("invoicer.project_config.load_yaml", return_value={"projects": {}}):
+            assert list_orgs() == []
+
+
+class TestGetOrg:
+    def test_found(self):
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            org = get_org("welance-gmbh")
+        assert org["country"] == "DE"
+
+    def test_missing_raises(self):
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            with pytest.raises(RuntimeError, match="not found"):
+                get_org("welance-nope")
+
+
+class TestActivateOrg:
+    def test_sets_qonto_env_vars(self, monkeypatch):
+        monkeypatch.setenv("QONTO_LOGIN_GMBH", "welance-gmbh-9999")
+        monkeypatch.setenv("QONTO_SECRET_KEY_GMBH", "secret-gmbh")
+        monkeypatch.delenv("QONTO_LOGIN", raising=False)
+        monkeypatch.delenv("QONTO_SECRET_KEY", raising=False)
+
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            activate_org("welance-gmbh")
+
+        assert os.environ["QONTO_LOGIN"] == "welance-gmbh-9999"
+        assert os.environ["QONTO_SECRET_KEY"] == "secret-gmbh"
+
+    def test_missing_env_var_raises(self, monkeypatch):
+        monkeypatch.delenv("QONTO_LOGIN_SRL", raising=False)
+        monkeypatch.delenv("QONTO_SECRET_KEY_SRL", raising=False)
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            with pytest.raises(RuntimeError, match="not set"):
+                activate_org("welance-srl")
+
+
+class TestResolveClientWithOrg:
+    def test_org_scoped_mapping(self):
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            # Same clockify_id, different qonto ids per org
+            assert resolve_qonto_client_id("cl_shared", org_id="welance-srl") == "q_srl_abc"
+            assert resolve_qonto_client_id("cl_shared", org_id="welance-gmbh") == "q_gmbh_xyz"
+
+    def test_orgless_mapping_matches_regardless(self):
+        """A mapping without `org:` is org-agnostic — matches any org context."""
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            assert resolve_qonto_client_id("cl_orgless", org_id="welance-srl") == "q_legacy_123"
+            assert resolve_qonto_client_id("cl_orgless", org_id="welance-gmbh") == "q_legacy_123"
+
+
+class TestGetDefaults:
+    def test_reads_defaults_block(self):
+        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+            d = get_defaults()
+        assert d == {"org": "welance-srl", "locale": "it"}
+
+    def test_empty_when_no_defaults(self):
+        with patch("invoicer.project_config.load_yaml", return_value={"projects": {}}):
+            assert get_defaults() == {}

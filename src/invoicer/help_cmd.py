@@ -20,6 +20,7 @@ _console = Console()
 TOPICS: dict[str, str] = {
     "getting-started": "First-run setup: prerequisites, `invoicer init`, Gmail OAuth",
     "workflow": "The monthly 4-command invoicing flow",
+    "multi-org": "Invoicing from multiple legal entities (SRL + GmbH) in one install",
     "italy-sdi": "Italian e-invoicing specifics: N-codes, TP/MP codes, SDI lifecycle",
     "troubleshooting": "Common errors and how to recover",
     "security": "Secrets, rotation, Gmail scope honesty, branch protection",

@@ -93,3 +93,69 @@ def extract_client_fields(text: str) -> dict:
         if block.type == "tool_use" and block.name == "record_client":
             return block.input
     raise RuntimeError("LLM did not return a tool_use block")
+
+
+def extract_defaults(
+    text: str,
+    *,
+    known_org_ids: list[str],
+    locale_choices: list[str],
+) -> dict:
+    """Map a free-form description of desired defaults to the structured shape.
+
+    The tool schema is built fresh from the caller's known org IDs so Haiku
+    cannot hallucinate an org that isn't in invoicer.yaml. One Haiku call.
+    """
+    schema = {
+        "type": "object",
+        "properties": {
+            "org": {
+                "type": "string",
+                "description": "Default Qonto org id. Empty string if the user didn't mention one.",
+                "enum": [*known_org_ids, ""],
+            },
+            "locale": {
+                "type": "string",
+                "description": "Default Qonto client locale. Empty string if not mentioned.",
+                "enum": [*locale_choices, ""],
+            },
+            "gmail_sender": {
+                "type": "string",
+                "description": "Default Gmail sender address. Empty string if not mentioned.",
+            },
+        },
+    }
+    tool = {
+        "name": "record_defaults",
+        "description": (
+            "Record the invoicer defaults described in the user's text. "
+            "Leave any field the user did not mention as an empty string."
+        ),
+        "input_schema": schema,
+    }
+    client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+    resp = client.messages.create(
+        model=MODEL,
+        max_tokens=512,
+        tools=[tool],
+        tool_choice={"type": "tool", "name": "record_defaults"},
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "Map the user's description to invoicer default keys. "
+                    "Only pick an `org` value from the provided enum. "
+                    f"Known orgs: {known_org_ids}. "
+                    f"Valid locales: {locale_choices}. "
+                    "If the user mentions 'GmbH' or 'German entity', pick the org id "
+                    "whose name suggests Germany. If they say 'SRL' or 'Italian entity', "
+                    "pick the Italian one. Leave fields empty when the user is silent.\n\n"
+                    f'---\n"{text}"\n---'
+                ),
+            }
+        ],
+    )
+    for block in resp.content:
+        if block.type == "tool_use" and block.name == "record_defaults":
+            return block.input
+    raise RuntimeError("LLM did not return a tool_use block")
