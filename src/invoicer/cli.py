@@ -137,12 +137,21 @@ def _defaults_root(ctx: typer.Context) -> None:
     if ctx.invoked_subcommand is not None:
         return
     from . import defaults as defaults_mod
+    from .config import get_project_root
 
+    yaml_path = get_project_root() / "invoicer.yaml"
     current = defaults_mod.read_all()
     if not current:
-        typer.echo(
-            "No defaults set. Run `invoicer defaults set` to add some."
-        )
+        if not yaml_path.exists():
+            typer.echo(
+                f"No invoicer.yaml in {yaml_path.parent} — nothing to show.\n"
+                f"Run `invoicer init` to create one, or cd into a directory "
+                f"that already has an invoicer.yaml."
+            )
+        else:
+            typer.echo(
+                "No defaults set. Run `invoicer defaults set` to add some."
+            )
         return
 
     from rich.console import Console
@@ -284,9 +293,13 @@ def defaults_set(
         typer.echo("Aborted.", err=True)
         raise typer.Exit(0)
 
-    for k, _, new in changes:
-        if new:
-            defaults_mod.set_default(k, new)
+    try:
+        for k, _, new in changes:
+            if new:
+                defaults_mod.set_default(k, new)
+    except FileNotFoundError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
     typer.echo("\n✓ Defaults updated.")
 
 
@@ -302,6 +315,9 @@ def defaults_unset(
     try:
         defaults_mod.unset_default(key)
     except ValueError as e:
+        typer.echo(str(e), err=True)
+        raise typer.Exit(1) from e
+    except FileNotFoundError as e:
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from e
     typer.echo(f"✓ Unset defaults.{key}.")

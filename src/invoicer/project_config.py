@@ -17,12 +17,24 @@ def _normalize(s: str) -> str:
 
 
 def load_yaml() -> dict:
+    """Load invoicer.yaml. Raises if the file is missing — use for operations
+    that REQUIRE project config (draft, finalize, discover, client lookups)."""
     path = get_project_root() / "invoicer.yaml"
     if not path.exists():
         raise RuntimeError(
             f"{path} not found. Copy invoicer.example.yaml to invoicer.yaml and fill "
             f"in your mappings, or run `invoicer init`. Current project dir: {path.parent}"
         )
+    return yaml.safe_load(path.read_text()) or {}
+
+
+def load_yaml_or_empty() -> dict:
+    """Load invoicer.yaml if it exists, else return {}. Use for side-effect-free
+    inspections (e.g. `invoicer defaults`) that should degrade gracefully when
+    no project config has been set up yet."""
+    path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        return {}
     return yaml.safe_load(path.read_text()) or {}
 
 
@@ -120,11 +132,11 @@ def resolve_qonto_client_id(
 def list_orgs() -> list[dict]:
     """Return the `orgs:` block from invoicer.yaml, or an empty list.
 
-    An empty list means the user is in legacy single-org mode, i.e. the
-    tool reads QONTO_LOGIN / QONTO_SECRET_KEY from the environment directly
-    without any invoicer.yaml-level org selection.
+    Graceful when invoicer.yaml is missing (returns []) — this function
+    is called by `_resolve_org` which must work before `invoicer init`
+    has been run, e.g. when reading defaults for inspection.
     """
-    data = load_yaml()
+    data = load_yaml_or_empty()
     return list(data.get("orgs") or [])
 
 
@@ -170,6 +182,11 @@ def activate_org(org_id: str) -> dict:
 # -------- Defaults ---------------------------------------------------------
 
 def get_defaults() -> dict:
-    """Return the `defaults:` block from invoicer.yaml, or {}."""
-    data = load_yaml()
+    """Return the `defaults:` block from invoicer.yaml, or {}.
+
+    Graceful when invoicer.yaml is missing — returns an empty dict so
+    `invoicer defaults` can report "no defaults set" instead of
+    crashing with a traceback.
+    """
+    data = load_yaml_or_empty()
     return dict(data.get("defaults") or {})
