@@ -20,12 +20,27 @@ from pathlib import Path
 import questionary
 import typer
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-ENV_PATH = _REPO_ROOT / ".env"
-ENV_EXAMPLE_PATH = _REPO_ROOT / ".env.example"
-INVOICER_YAML_PATH = _REPO_ROOT / "invoicer.yaml"
-INVOICER_EXAMPLE_PATH = _REPO_ROOT / "invoicer.example.yaml"
-CREDENTIALS_PATH = _REPO_ROOT / "credentials.json"
+from .config import get_project_root
+
+
+def _env_path() -> Path:
+    return get_project_root() / ".env"
+
+
+def _env_example_path() -> Path:
+    return get_project_root() / ".env.example"
+
+
+def _invoicer_yaml_path() -> Path:
+    return get_project_root() / "invoicer.yaml"
+
+
+def _invoicer_example_path() -> Path:
+    return get_project_root() / "invoicer.example.yaml"
+
+
+def _credentials_path() -> Path:
+    return get_project_root() / "credentials.json"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -147,14 +162,28 @@ def _test_clockify(env: dict[str, str]) -> tuple[bool, str]:
 
 
 def _test_gmail() -> tuple[bool, str]:
-    if not CREDENTIALS_PATH.exists():
-        return False, "credentials.json missing"
-    try:
-        from .gmail import _get_credentials  # type: ignore
+    """Check Gmail config. Does NOT trigger an OAuth browser flow on init.
 
-        creds = _get_credentials()
+    If `token.json` doesn't exist yet, reports "not authorized yet" instead
+    of opening a browser — the user completes OAuth on their first real
+    `invoicer mail-draft` run, where the browser popup makes sense.
+    """
+    creds_path = _credentials_path()
+    token_path = get_project_root() / "token.json"
+    if not creds_path.exists():
+        return False, "credentials.json missing"
+    if not token_path.exists():
+        return True, "credentials.json present (first mail-draft run will authorize)"
+    try:
+        from google.oauth2.credentials import Credentials  # type: ignore
         from googleapiclient.discovery import build  # type: ignore
 
+        creds = Credentials.from_authorized_user_file(
+            str(token_path),
+            ["https://www.googleapis.com/auth/gmail.modify"],
+        )
+        if not creds or not creds.valid:
+            return True, "token.json present (will refresh on next use)"
         service = build("gmail", "v1", credentials=creds, cache_discovery=False)
         profile = service.users().getProfile(userId="me").execute()
         return True, f"authenticated as {profile.get('emailAddress')}"
@@ -195,7 +224,7 @@ def _explain_google_oauth_setup() -> None:
     typer.echo("  3. https://console.cloud.google.com/apis/credentials/consent  → 'Internal' user type")
     typer.echo("  4. https://console.cloud.google.com/apis/credentials  → Create OAuth client ID → Desktop app → Download JSON")
     typer.echo()
-    typer.echo(f"Save the file as: {CREDENTIALS_PATH}")
+    typer.echo(f"Save the file as: {_credentials_path()}")
     typer.echo()
     if questionary.confirm(
         "Open the first page (projectcreate) in your browser now?",
@@ -207,18 +236,35 @@ def _explain_google_oauth_setup() -> None:
 def run_init() -> None:
     typer.secho("\n==  invoicer — interactive setup  ==\n", fg="green", bold=True)
 
+    project_dir = get_project_root()
+    typer.echo(f"Project directory: {project_dir}")
+    if not (project_dir / "pyproject.toml").exists() and not (
+        project_dir / "invoicer.example.yaml"
+    ).exists():
+        typer.secho(
+            "⚠  This doesn't look like an invoicer project directory. "
+            "Run `invoicer init` from the root of your clone, or set "
+            "$INVOICER_DIR to point at it.",
+            fg="yellow",
+        )
+        if not questionary.confirm("Continue anyway?", default=False).ask():
+            raise typer.Exit(1)
+    typer.echo()
+
+    env_path = _env_path()
+
     # --- env vars ---
-    existing = _read_env_file(ENV_PATH)
+    existing = _read_env_file(env_path)
     if existing:
-        typer.echo(f"Found existing .env ({len(existing)} keys) — using values as defaults.")
+        typer.echo(f"Found existing .env at {env_path} ({len(existing)} keys) — using values as defaults.")
     else:
-        typer.echo("No .env found — let's create one.")
+        typer.echo(f"No .env at {env_path} — let's create one.")
     new_values = _prompt_env(existing)
     if questionary.confirm(
-        f"\nWrite these values to {ENV_PATH.name}?", default=True
+        f"\nWrite these values to {env_path.name}?", default=True
     ).ask():
-        _write_env_file(ENV_PATH, new_values)
-        typer.secho(f"✓ Wrote {ENV_PATH}", fg="green")
+        _write_env_file(env_path, new_values)
+        typer.secho(f"✓ Wrote {env_path}", fg="green")
     else:
         typer.secho("Aborted — .env not written.", fg="yellow")
         raise typer.Exit(1)
@@ -230,20 +276,22 @@ def run_init() -> None:
 
     # --- invoicer.yaml ---
     typer.echo()
-    if INVOICER_YAML_PATH.exists():
-        typer.echo(f"✓ {INVOICER_YAML_PATH.name} already exists.")
-    elif INVOICER_EXAMPLE_PATH.exists():
-        shutil.copy(INVOICER_EXAMPLE_PATH, INVOICER_YAML_PATH)
+    yaml_path = _invoicer_yaml_path()
+    example_path = _invoicer_example_path()
+    if yaml_path.exists():
+        typer.echo(f"✓ {yaml_path.name} already exists.")
+    elif example_path.exists():
+        shutil.copy(example_path, yaml_path)
         typer.secho(
-            f"✓ Copied {INVOICER_EXAMPLE_PATH.name} → {INVOICER_YAML_PATH.name}",
+            f"✓ Copied {example_path.name} → {yaml_path.name}",
             fg="green",
         )
         typer.echo(
-            f"  Edit {INVOICER_YAML_PATH.name} to map Clockify projects to Qonto clients."
+            f"  Edit {yaml_path.name} to map Clockify projects to Qonto clients."
         )
     else:
         typer.secho(
-            f"⚠ Neither {INVOICER_YAML_PATH.name} nor {INVOICER_EXAMPLE_PATH.name} found.",
+            f"⚠ Neither {yaml_path.name} nor {example_path.name} found in {project_dir}.",
             fg="yellow",
         )
 
@@ -266,7 +314,7 @@ def run_init() -> None:
 
     # --- Gmail credentials.json ---
     typer.echo("  Gmail      ... ", nl=False)
-    if not CREDENTIALS_PATH.exists():
+    if not _credentials_path().exists():
         typer.secho("✗ credentials.json missing", fg="red")
         _explain_google_oauth_setup()
     else:

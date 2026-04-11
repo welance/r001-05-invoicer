@@ -1,9 +1,10 @@
 """Load and resolve invoicer.yaml — project + client mapping."""
 
 import re
-from pathlib import Path
 
 import yaml
+
+from .config import get_project_root
 
 
 def _normalize(s: str) -> str:
@@ -15,10 +16,12 @@ def _normalize(s: str) -> str:
 
 
 def load_yaml() -> dict:
-    root = Path(__file__).resolve().parents[2]
-    path = root / "invoicer.yaml"
+    path = get_project_root() / "invoicer.yaml"
     if not path.exists():
-        raise RuntimeError(f"{path} not found")
+        raise RuntimeError(
+            f"{path} not found. Copy invoicer.example.yaml to invoicer.yaml and fill "
+            f"in your mappings, or run `invoicer init`. Current project dir: {path.parent}"
+        )
     return yaml.safe_load(path.read_text()) or {}
 
 
