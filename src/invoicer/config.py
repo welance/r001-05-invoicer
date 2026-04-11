@@ -15,11 +15,16 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# Clockify credentials are required for every command that reads time
+# entries. Qonto credentials are NOT in this list — in multi-org mode
+# (invoicer.yaml `orgs:` block present) they are set per-command by
+# project_config.activate_org() from org-scoped .env keys like
+# QONTO_LOGIN_SRL / QONTO_SECRET_KEY_SRL. Legacy single-org mode uses
+# QONTO_LOGIN / QONTO_SECRET_KEY directly; that is checked in cli._resolve_org
+# rather than here so the error messages can cite invoicer.yaml.
 REQUIRED_ENV = [
     "CLOCKIFY_API_KEY",
     "CLOCKIFY_WORKSPACE_ID",
-    "QONTO_LOGIN",
-    "QONTO_SECRET_KEY",
 ]
 
 

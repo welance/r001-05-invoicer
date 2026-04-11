@@ -1,5 +1,6 @@
-"""Load and resolve invoicer.yaml — project + client mapping."""
+"""Load and resolve invoicer.yaml — orgs, defaults, client map, projects."""
 
+import os
 import re
 
 import yaml
@@ -89,12 +90,86 @@ def get_project(project_id: str) -> dict:
     return projects[project_id]
 
 
-def resolve_qonto_client_id(clockify_client_id: str) -> str:
+def resolve_qonto_client_id(
+    clockify_client_id: str, org_id: str | None = None
+) -> str:
+    """Look up the Qonto client id for a Clockify client.
+
+    If `org_id` is given and any mapping specifies an `org:` field, only
+    mappings for that org are considered. Mappings without an `org:` field
+    are treated as org-agnostic and always match — this keeps single-org
+    setups from having to annotate every entry.
+    """
     data = load_yaml()
     for mapping in data.get("clients") or []:
-        if mapping.get("clockify_id") == clockify_client_id:
-            return mapping["qonto_id"]
+        if mapping.get("clockify_id") != clockify_client_id:
+            continue
+        mapping_org = mapping.get("org")
+        if mapping_org and org_id and mapping_org != org_id:
+            continue
+        return mapping["qonto_id"]
+    hint = f" for org {org_id!r}" if org_id else ""
     raise RuntimeError(
-        f"No Qonto mapping for Clockify client {clockify_client_id!r}. "
+        f"No Qonto mapping for Clockify client {clockify_client_id!r}{hint}. "
         f"Add it under `clients:` in invoicer.yaml."
     )
+
+
+# -------- Orgs -------------------------------------------------------------
+
+def list_orgs() -> list[dict]:
+    """Return the `orgs:` block from invoicer.yaml, or an empty list.
+
+    An empty list means the user is in legacy single-org mode, i.e. the
+    tool reads QONTO_LOGIN / QONTO_SECRET_KEY from the environment directly
+    without any invoicer.yaml-level org selection.
+    """
+    data = load_yaml()
+    return list(data.get("orgs") or [])
+
+
+def get_org(org_id: str) -> dict:
+    """Look up one org by id, or raise with a useful message."""
+    orgs = list_orgs()
+    for o in orgs:
+        if o.get("id") == org_id:
+            return o
+    known = ", ".join(o.get("id", "?") for o in orgs) or "(none defined)"
+    raise RuntimeError(
+        f"Org {org_id!r} not found in invoicer.yaml `orgs:`. Known: {known}."
+    )
+
+
+def activate_org(org_id: str) -> dict:
+    """Set QONTO_LOGIN / QONTO_SECRET_KEY in the process environment from
+    the named org's env vars, so downstream qonto.* calls see the right
+    credentials. Returns the org dict for callers that need the id.
+
+    Raises if the org doesn't exist or if its referenced env vars are unset.
+    """
+    org = get_org(org_id)
+    login_key = org.get("login_env")
+    secret_key = org.get("secret_env")
+    if not login_key or not secret_key:
+        raise RuntimeError(
+            f"Org {org_id!r} is missing `login_env` or `secret_env` in "
+            f"invoicer.yaml."
+        )
+    login_val = os.environ.get(login_key)
+    secret_val = os.environ.get(secret_key)
+    if not login_val or not secret_val:
+        raise RuntimeError(
+            f"Env vars {login_key} and/or {secret_key} for org {org_id!r} "
+            f"are not set. Add them to your .env file, or run `invoicer init`."
+        )
+    os.environ["QONTO_LOGIN"] = login_val
+    os.environ["QONTO_SECRET_KEY"] = secret_val
+    return org
+
+
+# -------- Defaults ---------------------------------------------------------
+
+def get_defaults() -> dict:
+    """Return the `defaults:` block from invoicer.yaml, or {}."""
+    data = load_yaml()
+    return dict(data.get("defaults") or {})
