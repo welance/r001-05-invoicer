@@ -8,7 +8,7 @@ The tool turns Clockify hours into Qonto draft invoices, then helps you send the
 - **Clockify API key** — profile → API in Clockify
 - **Qonto Business API** credentials — login slug + secret key from Qonto → Settings → Integrations → API
 - **Gmail account** that will own the drafts (OAuth2, see below)
-- **Anthropic API key** (optional, only for LLM-assisted client extraction)
+- **Anthropic API key** (optional, only for LLM-assisted client extraction — skip this if you plan to use `invoicer client add --no-ai`)
 
 ## One-command setup
 

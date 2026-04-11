@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-11
+
+### Changed
+
+- **`invoicer client extract` removed, folded into `invoicer client add`.** The
+  two commands overlapped: `extract` parsed text with Haiku and printed the
+  fields, `add` did the same plus review + POST. Having two entry points
+  created pointless cognitive load and a permanent "which one do I run?"
+  question. `client add` is now the single entry point — decline the final
+  confirmation if you only want to preview extraction.
+
+### Added
+
+- **`invoicer update`** — one-command self-updater for non-technical users.
+  Runs `git pull --ff-only` followed by `uv tool install --editable . --force`
+  against the repo that backs the editable install. Refuses to run with a
+  dirty working tree or a diverged branch, so there's no silent data loss.
+- **`invoicer client add --no-ai`** — skip LLM extraction entirely and walk
+  through a guided sequence of field prompts instead. Lets users without an
+  Anthropic API key (or with exhausted credits) create Qonto clients from the
+  CLI. Italian-specific fields (`province_code`, `pec_email`, `recipient_code`)
+  are only prompted when `country_code` is `IT`, to avoid meaningless prompts
+  for non-IT clients.
+
+
 ## [0.2.1] - 2026-04-11
 
 ### Fixed
@@ -17,7 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   shape (commands first). The welcome panel now shows:
 
   1. A **Commands** section auto-generated from Typer's registered commands
-     (top-level + sub-typer groups like `client add` / `client extract`)
+     (top-level + sub-typer groups like `client add`)
   2. The **Help topics** section (unchanged — 5 long-form markdown topics)
 
   Commands are introspected from `invoicer.cli.app` via `registered_commands`

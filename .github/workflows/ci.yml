@@ -43,6 +43,10 @@ jobs:
           .venv/bin/python -c "import invoicer.cli; print('import OK')"
           .venv/bin/invoicer --help
           .venv/bin/invoicer init --help
+          .venv/bin/invoicer update --help
+          .venv/bin/invoicer discover --help
+          .venv/bin/invoicer client add --help
           .venv/bin/invoicer draft --help
           .venv/bin/invoicer finalize --help
           .venv/bin/invoicer mail-draft --help
+          .venv/bin/invoicer help --help

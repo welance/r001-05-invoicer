@@ -1,0 +1,101 @@
+# CLAUDE.md
+
+Project conventions for `r001-05-invoicer` (Clockify → Qonto invoicing CLI).
+Read before editing.
+
+## Command surface — keep these in sync
+
+Adding, removing, or renaming a Typer command in `src/invoicer/cli.py`
+requires updating:
+
+- `README.md` — the `## Commands` block, and the env-var table if the
+  command needs a new `.env` key
+- `CHANGELOG.md` — a bullet under `## [Unreleased]`
+- `tests/unit/test_help_topics.py` — the
+  `TestListTopics.test_list_topics_includes_commands` assertion lists the
+  expected command names
+- `src/invoicer/help/*.md` — any topic that references the old/new command
+  by name (grep before editing)
+- `.env.example` and `src/invoicer/init_cmd.py` — if the command touches an
+  environment variable
+
+`invoicer help` auto-introspects Typer via `src/invoicer/help_cmd.py`
+(`registered_commands` + `registered_groups`). Do **not** hand-edit the
+command list there — add/rename commands in `cli.py` and help updates
+itself.
+
+## Safety invariants — do not break
+
+- **Every write command shows a rich pre-mutation summary panel + explicit
+  confirm.** See `src/invoicer/summary.py`. Any new command that POSTs /
+  PATCHes / PUTs needs one.
+- **`src/invoicer/gmail.py` must never call `.send()` and must never import
+  `smtplib`.** Enforced by AST tests in
+  `tests/unit/test_help_topics.py::TestGmailModuleSafety`. The `gmail.modify`
+  OAuth scope *does* technically permit sending; the safety property is
+  code-level, not scope-level.
+- **`finalize` requires typed confirmation** of the invoice number — not a
+  `y/N`. Do not soften this.
+- **LLM calls are opt-in only.** Today that means `invoicer client add` in
+  its default (AI) mode; `--no-ai` skips it entirely. A happy-path monthly
+  invoice run uses zero LLM tokens. Do not add LLM calls to `draft` /
+  `finalize` / `mail-draft`.
+
+## Italian SDI specifics
+
+`src/invoicer/qonto.py` hardcodes Italian e-invoicing defaults
+(`payment_reporting: { conditions: TP02, method: MP05 }`, N-codes for VAT
+exemptions, etc.). These are real SDI tax codes, not cosmetic strings. Read
+`src/invoicer/help/italy-sdi.md` before touching them.
+
+## Tests
+
+- `uv run pytest -q` — the full suite should pass (108 tests as of the
+  last edit). Fast: runs in well under a second because we mock nothing.
+- `uv run ruff check src/invoicer tests` — CI runs this, so run it locally
+  before committing.
+- Unit tests cover pure math, payload builders, and parsers. External APIs
+  and LLM output are deliberately not stubbed — rationale in
+  `docs/TESTING.md`.
+- CI (`.github/workflows/ci.yml`) runs lint + unit tests + a CLI smoke test
+  that `--help`s every top-level command. When you add a new command, add
+  it to the smoke-test list too.
+
+## Shipping a change (commits → PR → release)
+
+Non-technical users install from a clone and run `invoicer update` to
+pull + reinstall. For that to mean anything, merged work must land on
+tagged releases. The flow:
+
+1. **Branch + commits.** Work on a feature branch (`feat/...`,
+   `fix/...`). Group commits by logical change — e.g. "merge two
+   commands" and "add update command" are separate commits, not one
+   dump. Commit messages follow conventional-commit prefixes (`feat:`,
+   `fix:`, `docs:`, `chore:`, `build:`) — `git log` shows the
+   convention.
+2. **PR.** Open with `gh pr create`. Title ≤70 chars, conventional
+   prefix. Body: `## Summary` bullets + `## Test plan` checklist. Wait
+   for CI green before merging.
+3. **Version bump + CHANGELOG.** User-visible changes need a
+   `pyproject.toml` version bump and a `CHANGELOG.md` entry. Bumping
+   rule:
+   - **patch** (`0.2.1 → 0.2.2`) — bug fixes, doc-only changes
+   - **minor** (`0.2.1 → 0.3.0`) — new commands, new flags, removed
+     commands (pre-1.0, removals are minor not major)
+   - **major** — reserved for post-1.0
+   Do the bump + CHANGELOG as part of the same PR that ships the
+   feature, not a separate "release PR".
+4. **Tag + GitHub release after merge.** Once the PR is merged to
+   `main`:
+   ```bash
+   git checkout main && git pull
+   git tag vX.Y.Z
+   git push origin vX.Y.Z
+   gh release create vX.Y.Z --title "vX.Y.Z" --notes-from-tag
+   ```
+   Or pass `--notes` directly with the CHANGELOG section for that
+   version. There is no auto-publish workflow on tag — the tag + GitHub
+   release are the deliverable, and `invoicer update` pulls them via
+   plain `git pull`.
+5. **Never tag an unmerged or dirty tree.** Tags must point at a commit
+   that is on `origin/main` and matches the CHANGELOG entry exactly.

@@ -57,7 +57,7 @@ Document any new E2E scenarios in the PR description.
 - **External API schemas**: if Qonto renames a field, the tests won't catch it — you'll find out when a real 422 hits the CLI. We rely on the clear error messages and the pre-mutation gates to contain the blast radius.
 - **Typer CLI argument parsing**: Typer itself is tested upstream. We trust it.
 - **`rich` rendering**: the panels are cosmetic and not worth testing.
-- **The LLM output**: `invoicer client extract` calls Haiku which is non-deterministic by design. Tests would have to stub the Anthropic SDK, which is more mocking than value. We review extracted fields manually before any write.
+- **The LLM output**: `invoicer client add` (default AI mode) calls Haiku which is non-deterministic by design. Tests would have to stub the Anthropic SDK, which is more mocking than value. We review extracted fields manually before any write.
 
 ## Pre-commit hook
 

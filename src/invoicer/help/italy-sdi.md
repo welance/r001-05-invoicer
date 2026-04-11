@@ -40,7 +40,7 @@ For a Qonto **client** record to be SDI-valid, it needs:
 - `billing_address` with `country_code`
 - For Italian clients: either a `recipient_code` (7-char codice destinatario) **or** a PEC email. Foreign clients don't need these.
 
-When you run `invoicer client add`, the tool extracts these fields from pasted text using Haiku, asks you to review, and POSTs the result. If you create clients manually in Qonto's UI instead, make sure these fields are set before you run `invoicer draft`.
+When you run `invoicer client add`, the tool extracts these fields from pasted text using Haiku, asks you to review, and POSTs the result. If you'd rather not use the LLM, run `invoicer client add --no-ai` and answer the guided field prompts by hand. If you create clients manually in Qonto's UI instead, make sure these fields are set before you run `invoicer draft`.
 
 ## Foreign clients (non-IT EU)
 

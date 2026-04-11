@@ -72,7 +72,7 @@ def _write_env_file(path: Path, values: dict[str, str]) -> None:
         f"GMAIL_SENDER={values.get('GMAIL_SENDER', '')}",
         f"GMAIL_SENDER_NAME={values.get('GMAIL_SENDER_NAME', '')}",
         "",
-        "# Optional: Anthropic for `invoicer client extract` / `client add`",
+        "# Optional: Anthropic for `invoicer client add` (not needed with --no-ai)",
         f"ANTHROPIC_API_KEY={values.get('ANTHROPIC_API_KEY', '')}",
     ]
     path.write_text("\n".join(lines) + "\n")
