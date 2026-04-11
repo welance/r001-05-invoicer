@@ -190,3 +190,85 @@ def get_defaults() -> dict:
     """
     data = load_yaml_or_empty()
     return dict(data.get("defaults") or {})
+
+
+# -------- orgs: block surgery --------------------------------------------
+
+def render_orgs_block(orgs: list[dict]) -> str:
+    """Render an `orgs:` block from a list of org dicts. Each org must have
+    id / country / login_env / secret_env keys. Output is YAML-valid and
+    indented so it drops into invoicer.yaml as a top-level block.
+    """
+    if not orgs:
+        return ""
+    lines = ["orgs:"]
+    for o in orgs:
+        lines.append(f"  - id: {o['id']}")
+        lines.append(f"    country: {o['country']}")
+        lines.append(f"    login_env: {o['login_env']}")
+        lines.append(f"    secret_env: {o['secret_env']}")
+    return "\n".join(lines) + "\n"
+
+
+def _find_orgs_block(lines: list[str]) -> tuple[int, int] | None:
+    """Return (start, end) half-open line range of the top-level `orgs:`
+    block, or None if not present. Matches identically to _find_defaults_block
+    in defaults.py but for the `orgs:` prefix.
+    """
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n")
+        if stripped == "orgs:" or stripped.startswith("orgs:"):
+            if line.startswith(" ") or line.startswith("\t"):
+                continue
+            end = i + 1
+            for j in range(i + 1, len(lines)):
+                peek = lines[j]
+                if peek.strip() == "":
+                    end = j + 1
+                    continue
+                if peek.startswith(" ") or peek.startswith("\t") or peek.startswith("-"):
+                    end = j + 1
+                    continue
+                break
+            return (i, end)
+    return None
+
+
+def write_orgs_block(orgs: list[dict]) -> None:
+    """Insert or replace the `orgs:` block in invoicer.yaml with the given
+    list, preserving the rest of the file. Caller is responsible for asking
+    the user to confirm before calling — this function writes unconditionally.
+
+    Raises FileNotFoundError if invoicer.yaml doesn't exist.
+    """
+    path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `invoicer init` from your project "
+            f"directory first, or copy invoicer.example.yaml to invoicer.yaml."
+        )
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+    found = _find_orgs_block(lines)
+    block = render_orgs_block(orgs)
+
+    if found is None:
+        if not block:
+            return
+        # Insert at the top of the file, after any leading comment block.
+        insert_at = 0
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if stripped.startswith("#") or stripped == "" or stripped == "\n":
+                insert_at = i + 1
+                continue
+            break
+        lines = lines[:insert_at] + [block, "\n"] + lines[insert_at:]
+    else:
+        start, end = found
+        if block:
+            lines[start:end] = [block]
+        else:
+            lines[start:end] = []
+
+    path.write_text("".join(lines))
