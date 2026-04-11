@@ -2,24 +2,49 @@
 
 The tool turns Clockify hours into Qonto draft invoices, then helps you send them via a Gmail draft you review before clicking Send.
 
+## Quick start — the command that does everything
+
+**TL;DR**: run **`invoicer init`** from the root of your clone. It's an interactive wizard that walks you through six numbered steps, detects what's already configured, and never writes anything without asking.
+
+```bash
+cd r001-05-invoicer          # or wherever you cloned it
+invoicer init                # the wizard
+```
+
+**What the wizard asks you for, in order:**
+
+| Step | What | Why |
+|---|---|---|
+| 1 | Verifies `uv` / `git` / `op` are on your PATH | Quick sanity check — non-blocking, just shows install hints for missing tools |
+| 2 | Your Qonto API credentials (per legal entity) | One `QONTO_LOGIN_<NAME>` + `QONTO_SECRET_KEY_<NAME>` pair per SRL / GmbH / etc. |
+| 3 | Clockify API key + workspace id | To pull billable time entries for the invoices |
+| 4a | Gmail sender email address (and optional display name) | The `From:` header on drafts |
+| 4b | Gmail OAuth — three-way picker | *Fetch from 1Password* (30 sec if you have 1P) · *Manual Google Cloud Console walk* (~15 min) · *Skip for now* |
+| 5 | Anthropic API key (optional) | Only needed for `invoicer client add` default mode and `invoicer defaults set --ai` |
+| 6 | Tests every connection | One Qonto ping per org, Clockify workspace check, Anthropic ping, Gmail token validation |
+
+**Re-running is safe and idempotent.** If you already have some things configured, each section asks **Keep / Edit / Add** rather than re-prompting everything. Pass `--force` to walk through every step from scratch.
+
+**If the wizard is missing anything**, it'll tell you — and it'll tell you *which command to run next*. At the very end, a "Next steps" block lists only the actions that are actually new based on what changed in this run (not a boilerplate chore list).
+
 ## Prerequisites
 
 - **Python 3.11+**
 - **Clockify API key** — profile → API in Clockify
 - **Qonto Business API** credentials — login slug + secret key from Qonto → Settings → Integrations → API. One pair per legal entity (SRL + GmbH, for example).
 - **Gmail account** that will own the drafts (OAuth2)
-- **1Password CLI** (welance team only) — to fetch the shared `credentials.json`
-- **Anthropic API key** (optional, only for LLM-assisted client extraction — skip this if you plan to use `invoicer client add --no-ai` and `invoicer defaults set` without `--ai`)
+- **1Password CLI** (optional but strongly recommended) — lets `invoicer init` fetch `credentials.json` from a shared vault so you don't have to walk the Google Cloud Console setup by hand. Works for any 1Password plan: Personal, Teams, or Business.
+- **Anthropic API key** (optional, only for LLM-assisted client extraction — skip if you plan to use `invoicer client add --no-ai` and `invoicer defaults set` without `--ai`)
 
-## One-command setup
+## Running `invoicer init` is the "one command to do everything"
 
 ```bash
 invoicer init
 ```
 
-This walks you through every environment variable interactively, writes your `.env`, seeds an `invoicer.yaml` from the example, tests every connection, and — if your `invoicer.yaml` has a `secrets:` block — fetches the Gmail OAuth client file from 1Password for you. Run it from the **root of your clone** (not from anywhere else — config is resolved against the current working directory).
+Run it from the **root of your clone** (not from anywhere else — config is resolved against the current working directory). It walks you through every environment variable interactively, writes your `.env`, seeds an `invoicer.yaml` from the example, tests every connection, and — if your `invoicer.yaml` has a `secrets:` block OR you pick the 1Password option in the Gmail step — fetches the Gmail OAuth client file from 1Password for you. No manual Google Cloud Console trip required unless you explicitly pick that path.
 
-`init` is **idempotent**: re-running it on an already-configured project detects what's already set and asks per-section "**K**eep / **E**dit / **A**dd another?" for each. It never forces you to hit Enter through 15 pre-filled prompts just to add one new org. Pass `--force` to bypass detection and walk through every section.
+**Idempotent by design**: re-running on an already-configured project detects what's already set and asks per-section "**K**eep / **E**dit / **A**dd another?". It never forces you to hit Enter through 15 pre-filled prompts just to add one new org. Pass `--force` to bypass detection and walk through every section.
 
 ## Gmail — the 1Password path (recommended for teams)
 

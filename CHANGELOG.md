@@ -7,6 +7,97 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-04-11
+
+### Changed
+
+- **`invoicer init` now actually feels like a wizard.** Previous
+  releases made init idempotent and added the 1Password proposal,
+  but running it cold still left users without a map of the journey:
+  no welcome, no step count, no explanation of what command started
+  everything. This release fixes that — init now opens with a rich
+  welcome panel listing every step, each section gets a numbered
+  header (`Step 2/6: Qonto`, `Step 3/6: Clockify`, ...), and the
+  very first step is a non-blocking pre-flight check that verifies
+  `uv`, `git`, and `op` are on PATH with install URLs for anything
+  missing.
+
+  The welcome panel, in full:
+
+  ```
+  ┌──────────────────────────────────────────────────────────────┐
+  │                                                              │
+  │  invoicer setup wizard  ·  6 steps                           │
+  │                                                              │
+  │  This wizard will walk you through:                          │
+  │                                                              │
+  │    1. Verify prerequisites (uv, git, optionally 1Password CLI)
+  │    2. Qonto API credentials (per legal entity)               │
+  │    3. Clockify API key + workspace                           │
+  │    4. Gmail sender + OAuth (via 1Password if available)      │
+  │    5. Anthropic API key (optional, for AI-assisted client add)
+  │    6. Test every connection                                  │
+  │                                                              │
+  │  Ctrl-C at any prompt to abort — nothing is written until    │
+  │  you confirm.                                                │
+  │                                                              │
+  │  Re-running this command is safe: it detects what's already  │
+  │  configured and asks per-section whether to keep, edit, or   │
+  │  add.                                                        │
+  │                                                              │
+  └──────────────────────────────────────────────────────────────┘
+  ```
+
+- **`invoicer help` welcome panel now shows a "New here?" banner
+  when it detects the current directory has no `.env` and no
+  `invoicer.yaml`.** Prominently points at `invoicer init` as the
+  single command to start everything:
+
+  ```
+  📦 New here?  Run invoicer init to set everything up in one
+                guided wizard.
+  No `.env` or `invoicer.yaml` detected in this directory — this
+  looks like a first-run.
+  ```
+
+  The banner is additive — it only appears on first-run and doesn't
+  clutter the panel once you're set up.
+
+- **`getting-started` help topic gets a Quick Start table** at the
+  very top listing every step the wizard will walk you through, so
+  you know what to expect before running the command. Prerequisites
+  section generalized: 1Password CLI is now listed as "optional but
+  strongly recommended" for any 1Password user, not just welance.
+
+### Added
+
+- **`init_cmd._WIZARD_STEPS`** — the canonical list of wizard step
+  descriptions, used by both the welcome panel and the CHANGELOG
+  so everything stays in sync if a step is added later.
+- **`init_cmd._print_welcome_panel()`** — renders the welcome panel
+  via `rich.Panel`.
+- **`init_cmd._check_prerequisites()`** — non-blocking pre-flight
+  check via `shutil.which` for `uv`, `git`, and `op`. Prints
+  platform-specific install URLs for any missing tool but doesn't
+  stop the wizard. Called as Step 1 of 6.
+- **`help_cmd._is_first_run()`** — heuristic detection of
+  first-run state (no `.env` and no `invoicer.yaml` in the project
+  root). Feeds the welcome-panel banner. Graceful: returns False on
+  any unexpected exception so a weird environment can't break the
+  help output.
+
+### Tests
+
+- **+10 new unit tests**:
+  - `_WIZARD_STEPS` not empty / content sanity
+  - `_print_welcome_panel` runs without error and renders every step
+    description in the output
+  - `_check_prerequisites` all-present / all-missing / mixed-state
+    (3 cases covering the full install-hint logic)
+  - `_is_first_run` first-run-clean-dir / has-env-only / has-yaml-only
+    / has-both (4 cases covering the detection heuristic)
+- **221 passing** total (up from 211).
+
 ## [0.4.5] - 2026-04-11
 
 ### Changed

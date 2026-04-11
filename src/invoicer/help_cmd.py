@@ -116,6 +116,26 @@ def _collect_commands() -> list[tuple[str, str]]:
     return out
 
 
+def _is_first_run() -> bool:
+    """Detect whether the current directory looks like a freshly-cloned
+    install that hasn't been through `invoicer init` yet. Used to show a
+    prominent call-to-action banner in the help welcome panel.
+
+    Heuristic: if neither .env nor invoicer.yaml exists in the project
+    root, we call it first-run. Can't go wrong with a hint — the banner
+    is additive, not intrusive.
+    """
+    try:
+        from .config import get_project_root
+    except Exception:
+        return False
+    try:
+        root = get_project_root()
+    except Exception:
+        return False
+    return not (root / ".env").exists() and not (root / "invoicer.yaml").exists()
+
+
 def list_topics() -> None:
     """Print the welcome panel with both the command list AND the topic index."""
     previous = _previous_tag(__version__)
@@ -133,6 +153,17 @@ def list_topics() -> None:
     lines: list[str] = [
         version_line,
         *link_lines,
+    ]
+    if _is_first_run():
+        lines += [
+            "",
+            "[bold yellow]📦 New here?[/bold yellow]  "
+            "Run [bold cyan]invoicer init[/bold cyan] to set everything "
+            "up in one guided wizard.",
+            "[dim]No `.env` or `invoicer.yaml` detected in this directory — "
+            "this looks like a first-run.[/dim]",
+        ]
+    lines += [
         "",
         "[bold]Usage:[/bold]  [cyan]invoicer <command> [options][/cyan]",
         "",
