@@ -66,7 +66,8 @@ Concretely:
 ## Commands
 
 ```
-invoicer init                                  # Interactive first-run setup (new!)
+invoicer init                                  # Interactive first-run setup
+invoicer help [topic]                          # Long-form help: getting-started, workflow, italy-sdi, troubleshooting, security
 invoicer discover                              # List Clockify + Qonto inventories
 invoicer client extract                        # LLM-parse company details from pasted text (Anthropic Haiku)
 invoicer client add                            # Extract → review → POST /v2/clients to Qonto

@@ -22,6 +22,22 @@ def init() -> None:
 
 
 @app.command()
+def help(
+    topic: str = typer.Argument(
+        None,
+        help="Topic name. Omit to list all topics.",
+    ),
+) -> None:
+    """Show long-form help for a specific topic, or list all topics."""
+    from .help_cmd import list_topics, show_topic
+
+    if topic is None or topic == "topics":
+        list_topics()
+        return
+    show_topic(topic)
+
+
+@app.command()
 def discover() -> None:
     """List Clockify projects/clients and Qonto clients to fill invoicer.yaml."""
     load_env()
