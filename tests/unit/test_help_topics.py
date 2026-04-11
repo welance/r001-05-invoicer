@@ -40,6 +40,21 @@ class TestListTopics:
                 f"Topic {name!r} missing from list_topics output"
             )
 
+    def test_list_topics_includes_commands(self, capsys):
+        """Regression: `invoicer help` must show the command list, not just topics."""
+        list_topics()
+        captured = capsys.readouterr()
+        # Top-level commands that should always be present
+        for cmd in ["init", "discover", "draft", "finalize", "mail-draft", "help"]:
+            assert cmd in captured.out, (
+                f"Command {cmd!r} missing from `invoicer help` output"
+            )
+        # Sub-commands from the `client` group
+        for sub in ["client extract", "client add"]:
+            assert sub in captured.out, (
+                f"Subcommand {sub!r} missing from `invoicer help` output"
+            )
+
 
 class TestShowTopic:
     @pytest.mark.parametrize("topic", list(TOPICS.keys()))
