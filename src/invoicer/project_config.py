@@ -39,6 +39,10 @@ def find_projects(query: str) -> list[tuple[str, dict]]:
     if not q:
         return []
     qn = _normalize(q)
+    # Reject queries that normalize to empty (e.g. "!!!", "...") — substring
+    # matching against "" would return every project silently.
+    if not qn:
+        return []
 
     # 1. exact id
     if q in projects:

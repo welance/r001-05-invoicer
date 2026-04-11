@@ -16,10 +16,22 @@ def _client() -> httpx.Client:
 
 
 def list_clients() -> list[dict]:
+    """Paginated list of Qonto clients."""
+    out: list[dict] = []
+    page = 1
     with _client() as c:
-        r = c.get("/clients", params={"per_page": 100})
-        r.raise_for_status()
-        return r.json().get("clients", [])
+        while True:
+            r = c.get("/clients", params={"per_page": 100, "page": page})
+            r.raise_for_status()
+            data = r.json()
+            batch = data.get("clients", [])
+            out.extend(batch)
+            meta = data.get("meta", {}) or {}
+            total_pages = meta.get("total_pages") or 1
+            if page >= total_pages or not batch:
+                break
+            page += 1
+    return out
 
 
 def get_client(client_id: str) -> dict:

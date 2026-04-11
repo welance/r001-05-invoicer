@@ -61,7 +61,7 @@ Concretely:
 5. **Requires typed confirmation** (re-type the invoice number) before `finalize`
 6. **Downloads the finalized PDF** and generates a CSV timesheet from the invoice line items
 7. **Creates a Gmail draft** via OAuth2, with the PDF + CSV attached, subject + body pre-filled
-8. **Does NOT send.** The Gmail scope (`gmail.modify`) used by this tool physically cannot call `messages.send` or `drafts.send`. You review and send in Gmail yourself.
+8. **Does NOT send.** This tool's code only calls `drafts.create()` / `drafts.update()` — never `messages.send()` or `drafts.send()`. You review and click Send in Gmail's web UI yourself. (Note: the `gmail.modify` OAuth scope technically *does* permit sending; the safety comes from the source code, not the scope. Audit `src/invoicer/gmail.py` to verify.)
 
 ## Commands
 
@@ -132,7 +132,7 @@ The tool uses the Gmail API with OAuth2 to create drafts — not app passwords, 
 5. **Save the downloaded file as `credentials.json`** in the repo root (gitignored)
 6. **First run** (`invoicer mail-draft ...`) opens a browser for consent. A `token.json` is cached and all subsequent runs are silent.
 
-The tool requests the `https://www.googleapis.com/auth/gmail.modify` scope, which allows creating/updating drafts but **does not allow sending**. This is defense-in-depth: even a code bug can't trigger an unwanted send.
+The tool requests the `https://www.googleapis.com/auth/gmail.modify` scope. **Be aware**: per Google's documentation, this scope technically *does* allow `messages.send` and `drafts.send`. The safety here comes from this tool's **source code** — `src/invoicer/gmail.py` only calls `drafts().create()` and `drafts().update()`, nothing else. Audit the file before trusting the tool with a real mailbox.
 
 ### 3. Billing config
 
@@ -167,7 +167,7 @@ Four commands, two reviews (Qonto UI + Gmail UI), one physical click to send.
 
 - **Every write command shows a rich terminal panel** with exactly what's going to change, where, and whether it's reversible, before asking for confirmation.
 - **`finalize` requires typed confirmation** of the invoice number — not just `y/N`. The invoice number is different for every invoice, so accidental confirmation is impossible.
-- **`mail-draft` never calls `smtplib.sendmail` or `messages.send`.** The Gmail scope is `gmail.modify` which excludes sending. Audit the code in `src/invoicer/gmail.py` to verify.
+- **`mail-draft` never calls `smtplib.sendmail`, `messages.send`, or `drafts.send`.** The `gmail.modify` scope *does* technically allow these per Google's docs — the safety property is enforced at the code level, not the scope level. Audit `src/invoicer/gmail.py` to verify (the only Gmail API calls are `drafts().create()` and `drafts().update()`).
 - **Qonto is the single source of truth for client data** — the tool never caches client info locally. Every run fetches fresh data from Qonto.
 - **Rate math, VAT math, and payload building are pure functions** with no side effects. LLM is only invoked when the user opts in (`client extract`, `client add --from-file`). A happy-path monthly invoice run uses **zero LLM tokens**.
 - **Nothing that looks reversible is actually reversible past `finalize`.** Once Qonto finalizes an invoice, the number is locked and for Italian orgs the document is queued for SDI. Voiding requires a credit note.

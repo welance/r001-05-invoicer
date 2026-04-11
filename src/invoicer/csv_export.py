@@ -13,6 +13,19 @@ import re
 
 _DATE_RE = re.compile(r"^\s*(\d{4}-\d{2}-\d{2})\s*[·\-]?\s*(.*?)\s*$")
 
+# Cells starting with these characters can be interpreted as formulas by
+# Excel / LibreOffice / Google Sheets when a CSV is opened. Prepend a
+# single-quote (standard OWASP mitigation) to neutralize them.
+_FORMULA_PREFIX = ("=", "+", "-", "@", "\t", "\r")
+
+
+def _sanitize_cell(value: str) -> str:
+    """Escape a leading formula-trigger character. Returns value unchanged otherwise."""
+    s = str(value or "")
+    if s and s[0] in _FORMULA_PREFIX:
+        return "'" + s
+    return s
+
 
 def _parse_date_user(description: str) -> tuple[str, str]:
     """Parse a 'YYYY-MM-DD · username' (or similar) metadata line."""
@@ -45,7 +58,14 @@ def build_invoice_csv(invoice: dict) -> bytes:
         total_hours += hours
         total_subtotal += subtotal
         writer.writerow(
-            [date, user, work, f"{hours:.2f}", f"{unit_price:.2f}", f"{subtotal:.2f}"]
+            [
+                _sanitize_cell(date),
+                _sanitize_cell(user),
+                _sanitize_cell(work),
+                f"{hours:.2f}",
+                f"{unit_price:.2f}",
+                f"{subtotal:.2f}",
+            ]
         )
     writer.writerow([])
     writer.writerow(["", "", "TOTAL", f"{total_hours:.2f}", "", f"{total_subtotal:.2f}"])

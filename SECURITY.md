@@ -28,7 +28,7 @@ Because this tool touches **real billing APIs** (Qonto) and **real mailboxes** (
 
 - **Credential leakage**: anything that could log, transmit, or expose API keys, OAuth tokens, or `credentials.json`.
 - **Unauthorized writes**: any code path that could create, modify, finalize, or send an invoice without the explicit user confirmation gates in place.
-- **Unauthorized sends**: the `mail-draft` command is built on the Gmail `gmail.modify` scope, which cannot send email. If you find a way for the tool to trigger a message send, that is a high-severity issue.
+- **Unauthorized sends**: the `mail-draft` command uses the Gmail `gmail.modify` scope, which per Google's documentation DOES technically allow `messages.send` / `drafts.send`. The safety comes from the source code (`src/invoicer/gmail.py` only calls `drafts.create()` and `drafts.update()`). If you find any code path — direct or transitive — that could result in an actual send without the user clicking Send in Gmail's UI, that is a high-severity issue.
 - **Injection**: unsanitized user input that could be interpreted by Qonto, Gmail, or Clockify APIs in unintended ways.
 
 ## Out of scope

@@ -1,6 +1,7 @@
+import os
 import sys
-from datetime import UTC
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import typer
 
@@ -144,11 +145,21 @@ def draft(
 
     load_env()
 
-    # Parse month
+    # Parse month in the org's local timezone, not UTC. An Italian user logging
+    # time at 23:30 Europe/Rome on Jan 31 sits at 22:30 UTC — under a UTC boundary
+    # it would be excluded from January.
+    tz_name = os.environ.get("INVOICER_TIMEZONE", "Europe/Rome")
+    try:
+        tz = ZoneInfo(tz_name)
+    except Exception as e:
+        typer.echo(f"Invalid INVOICER_TIMEZONE {tz_name!r}: {e}", err=True)
+        raise typer.Exit(1) from e
     try:
         year, mon = (int(x) for x in month.split("-"))
-        period_start = datetime(year, mon, 1, tzinfo=UTC)
-        period_end = datetime(year, mon, monthrange(year, mon)[1], 23, 59, 59, tzinfo=UTC)
+        period_start = datetime(year, mon, 1, tzinfo=tz)
+        period_end = datetime(
+            year, mon, monthrange(year, mon)[1], 23, 59, 59, tzinfo=tz
+        )
     except (ValueError, IndexError) as e:
         typer.echo(f"Invalid --month {month!r}, expected YYYY-MM.", err=True)
         raise typer.Exit(1) from e
@@ -209,6 +220,10 @@ def draft(
     qc = qonto.get_client(qonto_client_id)
     qonto_client_name = qc.get("name", qonto_client_id)
 
+    typer.echo("Fetching Qonto main bank account...", err=True)
+    bank = qonto.get_main_bank_account()
+    org = qonto.get_organization()
+
     # Aggregate
     typer.echo(
         f"Aggregating Clockify billable hours ({period_start.date()} → {period_end.date()}, "
@@ -258,6 +273,9 @@ def draft(
         issue_date=issue_date,
         due_date=due_date,
         items=items,
+        iban=bank["iban"],
+        bic=bank.get("bic"),
+        beneficiary_name=org.get("legal_name"),
         purchase_order=purchase_order,
         status="draft",
     )
@@ -348,10 +366,8 @@ def mail_draft(
 ) -> None:
     """Download the invoice PDF and create a Gmail draft with it attached.
 
-    Does NOT send. The draft appears in [Gmail]/Drafts for manual review + send.
+    Creates a Gmail draft; the user reviews and sends from Gmail web UI.
     """
-    import os
-
     import questionary
 
     from .csv_export import build_invoice_csv
@@ -395,6 +411,20 @@ def mail_draft(
     sender = os.environ["GMAIL_SENDER"]
     sender_name = os.environ.get("GMAIL_SENDER_NAME") or sender.split("@", 1)[0].capitalize()
     subject = f"{client_name} — Invoice {number}"
+
+    # Compute VAT line from actual invoice data — never hardcode.
+    vat_obj = inv.get("vat_amount") or {}
+    vat_value = vat_obj.get("value") if isinstance(vat_obj, dict) else vat_obj
+    try:
+        vat_zero = float(vat_value or 0) == 0
+    except (TypeError, ValueError):
+        vat_zero = False
+    vat_line = (
+        "VAT is not applied on this invoice.\n"
+        if vat_zero
+        else "VAT is included as shown on the attached invoice.\n"
+    )
+
     body = (
         f"Hello,\n\n"
         f"Please find attached our invoice {number} for consulting services.\n\n"
@@ -402,7 +432,8 @@ def mail_draft(
         f"- Due date:   {due_date}\n"
         f"- Amount:     €{total}\n"
         f"- Payment:    bank transfer (IBAN on the invoice)\n\n"
-        f"VAT is not applied — intra-EU B2B service.\n\n"
+        f"{vat_line}"
+        f"\n"
         f"Please let us know if you have any questions.\n\n"
         f"Best regards,\n"
         f"{sender_name}\n"

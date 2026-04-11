@@ -1,8 +1,14 @@
-"""Gmail API (OAuth2) — creates drafts only, never sends.
+"""Gmail API (OAuth2) — creates drafts in the user's Drafts folder.
 
-This module uses the `gmail.modify` scope, which allows creating/updating
-drafts but NOT sending email. Even if the code had a bug, the OAuth token
-physically cannot trigger a send.
+This module uses the `gmail.modify` scope. IMPORTANT: per Google's Gmail API
+scopes reference, `gmail.modify` grants "all read/write operations except
+permanent deletion" — which DOES include `messages.send` and `drafts.send`.
+There is no Gmail scope that allows creating drafts but blocks sending.
+
+The safety property of this tool is therefore NOT "the scope cannot send",
+it is "THIS MODULE'S CODE only calls `drafts().create()` and `drafts().update()`,
+never `drafts().send()` or `messages().send()`". Audit the code below to verify.
+The user is always the one who clicks Send in Gmail's web UI.
 
 First-time use opens a browser for consent. Token is cached in token.json.
 """

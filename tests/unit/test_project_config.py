@@ -91,6 +91,12 @@ class TestFindProjects:
         result = self._find("All Safe!")
         assert len(result) == 2
 
+    def test_empty_normalized_query_returns_empty(self):
+        """Queries like '!!!' normalize to '' — must NOT return all projects."""
+        assert self._find("!!!") == []
+        assert self._find("...") == []
+        assert self._find("  - - -  ") == []
+
     def test_exact_alias_preferred_over_substring(self):
         """If query exactly matches one alias, don't return substring matches from others."""
         # 'r005-01' exactly matches pid_aaa's alias — should return ONLY that one

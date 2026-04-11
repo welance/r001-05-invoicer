@@ -67,11 +67,26 @@ def list_clients() -> list[dict]:
 
 
 def _list_users() -> dict[str, str]:
+    """Paginated list of workspace users. Returns {user_id: display_name}."""
     ws = os.environ["CLOCKIFY_WORKSPACE_ID"]
+    out: dict[str, str] = {}
+    page = 1
     with _client() as c:
-        r = c.get(f"/workspaces/{ws}/users", params={"page-size": 200})
-        r.raise_for_status()
-        return {u["id"]: u.get("name") or u.get("email") or u["id"] for u in r.json()}
+        while True:
+            r = c.get(
+                f"/workspaces/{ws}/users",
+                params={"page-size": 200, "page": page},
+            )
+            r.raise_for_status()
+            batch = r.json()
+            if not batch:
+                break
+            for u in batch:
+                out[u["id"]] = u.get("name") or u.get("email") or u["id"]
+            if len(batch) < 200:
+                break
+            page += 1
+    return out
 
 
 def aggregate_billable_hours(
@@ -119,8 +134,9 @@ def aggregate_billable_hours(
                         "page-size": 200,
                     },
                 )
-                if r.status_code != 200:
-                    break
+                # Loud failure — never silently skip pages. Under-billing via a
+                # transient 429 / 5xx is worse than aborting with a clear error.
+                r.raise_for_status()
                 entries = r.json()
                 if not entries:
                     break
