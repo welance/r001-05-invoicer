@@ -24,6 +24,14 @@ requires updating:
 command list there — add/rename commands in `cli.py` and help updates
 itself.
 
+The welcome panel also surfaces `invoicer v<current>`, a release-notes
+URL, and a GitHub compare URL against the previous version. The
+previous version is found by parsing `CHANGELOG.md` `## [X.Y.Z]`
+headings in file order. **Whenever you cut a release, add the new
+`## [X.Y.Z] - YYYY-MM-DD` heading ABOVE the prior one** — the order
+is what the compare URL depends on. If you skip this, the compare
+link will point at the wrong predecessor until you fix it.
+
 ## Safety invariants — do not break
 
 - **Every write command shows a rich pre-mutation summary panel + explicit

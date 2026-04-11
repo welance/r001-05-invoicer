@@ -42,6 +42,7 @@ jobs:
         run: |
           .venv/bin/python -c "import invoicer.cli; print('import OK')"
           .venv/bin/invoicer --help
+          .venv/bin/invoicer --version
           .venv/bin/invoicer init --help
           .venv/bin/invoicer update --help
           .venv/bin/invoicer discover --help

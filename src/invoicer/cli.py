@@ -19,6 +19,31 @@ app.add_typer(client_app, name="client")
 app.add_typer(defaults_app, name="defaults")
 
 
+def _version_callback(value: bool) -> None:
+    if not value:
+        return
+    from . import __version__
+
+    typer.echo(f"invoicer {__version__}")
+    raise typer.Exit()
+
+
+@app.callback()
+def _main(
+    version: bool = typer.Option(
+        None,
+        "--version",
+        "-V",
+        callback=_version_callback,
+        is_eager=True,
+        help="Show the installed version and exit.",
+    ),
+) -> None:
+    """Clockify → Qonto invoicing tool."""
+    # Callback body intentionally empty — all work happens in `_version_callback`.
+    return
+
+
 def _resolve_org(
     cli_override: str | None,
     project_org: str | None = None,

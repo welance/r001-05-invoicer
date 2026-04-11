@@ -26,6 +26,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`invoicer --version` / `-V`** — prints the installed version and
+  exits. Standard CLI convention; we'd been missing it.
+- **`invoicer help` welcome panel now shows version + release links.**
+  The top of the panel surfaces:
+  - `r001-05-invoicer v<current>` — so non-tech users can tell which
+    build they have (useful when asking "did this change reach me?")
+  - **Release notes** URL — a direct link to
+    `/releases/tag/v<current>` on GitHub, which has the release page
+    with the changelog for that version
+  - **What changed since v<previous>** — a GitHub compare URL
+    (`/compare/v<previous>...v<current>`) giving a diff view of every
+    commit between the two tags
+  The previous version is discovered by parsing `CHANGELOG.md` for
+  `## [X.Y.Z]` headings in file order. For editable installs (what
+  your non-tech colleagues have via `uv tool install --editable .`)
+  both links always work; for wheel installs the compare link is
+  omitted since the changelog isn't bundled.
 - **Shell autocomplete — documented, not new.** Typer already provides
   `invoicer --install-completion` and `invoicer --show-completion` out
   of the box (auto-detects bash / zsh / fish / powershell). The
