@@ -272,3 +272,102 @@ def write_orgs_block(orgs: list[dict]) -> None:
             lines[start:end] = []
 
     path.write_text("".join(lines))
+
+
+# -------- secrets: block surgery -----------------------------------------
+
+def render_secrets_block(credentials_json_config: dict) -> str:
+    """Render the full `secrets:` block with a single `credentials_json`
+    key. Today we only support one credential type; the rendering is
+    flat enough that more can be added without changing callers.
+    """
+    if not credentials_json_config:
+        return ""
+    out = ["secrets:", "  credentials_json:"]
+    for k in ("source", "vault", "item", "file"):
+        v = credentials_json_config.get(k)
+        if v is None or v == "":
+            continue
+        # Quote vault names with spaces so the YAML stays valid.
+        if k == "vault" and (" " in str(v) or ":" in str(v)):
+            out.append(f'    {k}: "{v}"')
+        else:
+            out.append(f"    {k}: {v}")
+    return "\n".join(out) + "\n"
+
+
+def _find_secrets_block(lines: list[str]) -> tuple[int, int] | None:
+    """Return (start, end) half-open range of the top-level `secrets:` block,
+    or None if not present. Follows the same shape-detection rules as
+    `_find_orgs_block` and `defaults._find_defaults_block` — look for the
+    key at column 0, then consume indented / blank lines until the next
+    top-level key.
+    """
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n")
+        if stripped == "secrets:" or stripped.startswith("secrets:"):
+            if line.startswith(" ") or line.startswith("\t"):
+                continue
+            end = i + 1
+            for j in range(i + 1, len(lines)):
+                peek = lines[j]
+                if peek.strip() == "":
+                    end = j + 1
+                    continue
+                if peek.startswith(" ") or peek.startswith("\t"):
+                    end = j + 1
+                    continue
+                break
+            return (i, end)
+    return None
+
+
+def write_secrets_credentials_json_block(
+    *, vault: str, item: str, file: str = "credentials.json"
+) -> None:
+    """Insert or replace the `secrets.credentials_json` block in
+    invoicer.yaml so future runs can find it. Preserves comments and
+    surrounding content via text surgery. Caller confirms with the user
+    before invoking — this writes unconditionally.
+
+    Raises FileNotFoundError if invoicer.yaml doesn't exist.
+    """
+    path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `invoicer init` from your project "
+            f"directory first, or copy invoicer.example.yaml to invoicer.yaml."
+        )
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+
+    block = render_secrets_block(
+        {
+            "source": "1password",
+            "vault": vault,
+            "item": item,
+            "file": file,
+        }
+    )
+
+    found = _find_secrets_block(lines)
+    if found is None:
+        if not block:
+            return
+        # Insert after any leading comment block at the top of the file.
+        insert_at = 0
+        for i, line in enumerate(lines):
+            stripped = line.lstrip()
+            if stripped.startswith("#") or stripped == "" or stripped == "\n":
+                insert_at = i + 1
+                continue
+            break
+        lines = lines[:insert_at] + [block, "\n"] + lines[insert_at:]
+    else:
+        start, end = found
+        if block:
+            lines[start:end] = [block]
+        else:
+            lines[start:end] = []
+
+    path.write_text("".join(lines))
