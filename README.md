@@ -10,23 +10,45 @@ Open-sourced by [welance](https://welance.com) under MIT. The `r001-05` prefix i
 
 ---
 
-## 🚀 Get started in 60 seconds
+## 🚀 Get started (welance team — 3 commands)
+
+If you're on the welance team and already have **1Password** installed, the setup is three commands total. The tool will fetch your Gmail OAuth client file from our shared 1Password vault and walk you through the rest:
 
 ```bash
+# 1. Install the 1Password CLI (one-time, per machine)
+brew install 1password-cli
+# Then enable the desktop-app integration: 1Password app → Settings →
+# Developer → check "Integrate with 1Password CLI"
+
+# 2. Clone + install the tool
 git clone https://github.com/welance/r001-05-invoicer.git
 cd r001-05-invoicer
 uv tool install --editable .      # installs `invoicer` on your PATH
-invoicer init                     # interactive: prompts for each API key, tests every connection
-invoicer discover                 # shows your Clockify + Qonto inventory
+invoicer --install-completion     # enable tab-completion in your shell
+
+# 3. Run the guided setup
+invoicer init                     # asks for your Qonto + Clockify keys, fetches
+                                  # credentials.json from 1Password, opens the
+                                  # browser for Gmail account selection, tests
+                                  # every connection
 ```
 
-Then edit `invoicer.yaml` to map one Clockify project to one Qonto client, and you can produce your first draft invoice:
+That's it. You'll be asked for:
+- Your welance Qonto org credentials (one or more legal entities — SRL, GmbH, etc.)
+- Your Clockify API key
+- Which Google account should own your invoice drafts (browser picker)
+
+Everything else is automated: `credentials.json` is fetched from the shared **1Password vault `p007-01 Welance`** (item `invoicer-credentials-json`), OAuth token landed in your own `token.json`, and your Gmail drafts go to *your* Drafts folder.
+
+Then produce your first draft invoice:
 
 ```bash
 invoicer draft <project-alias> --month 2026-04 --purchase-order "Attn: Nick"
 ```
 
-See the full setup guide below if `invoicer init` can't auto-configure something.
+### 🛠 Get started (everyone else — without 1Password)
+
+If you're forking this tool outside welance, the `secrets:` block in `invoicer.yaml` is optional. Leave it commented out, and `invoicer init` falls back to a 4-step Google Cloud Console walkthrough for creating your own `credentials.json`. See `invoicer help getting-started` for details.
 
 ---
 
@@ -66,12 +88,13 @@ Concretely:
 ## Commands
 
 ```
-invoicer init                                  # Interactive first-run setup (multi-org aware)
+invoicer init [--force]                        # Idempotent first-run setup (multi-org aware, 1Password-enabled)
 invoicer help [topic]                          # Long-form help: getting-started, workflow, italy-sdi, troubleshooting, security, multi-org
 invoicer update                                # git pull + reinstall (for editable installs from a clone)
 invoicer defaults                              # Show cached defaults (org, locale, …)
 invoicer defaults set [--ai]                   # Walk through prompts (or describe in NL) to edit defaults
 invoicer defaults unset <key>                  # Remove one default
+invoicer secrets fetch [--force]               # Pull credentials.json from the 1Password vault declared in invoicer.yaml
 invoicer discover [--org X]                    # List Clockify + Qonto inventories (Qonto list is per-org)
 invoicer client add [--org X] [--no-ai]        # Create a Qonto client — Haiku extraction by default, --no-ai for manual
 invoicer draft <project> --month YYYY-MM [--org X]   # Build a Qonto draft invoice — org auto-picked from project/defaults

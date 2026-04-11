@@ -564,12 +564,39 @@ def _ensure_gmail_oauth(*, force: bool) -> tuple[bool, bool]:
         return True, False
 
     if not _credentials_path().exists():
-        _explain_google_oauth_setup()
-        if not _wait_for_credentials_json():
-            return False, False
-        typer.secho(
-            f"✓ Found {_credentials_path().name}", fg="green"
+        # Prefer 1Password fetch when invoicer.yaml declares a secrets block.
+        # If the fetch fails, hard-error — the user opted into 1Password and
+        # would be confused by a silent fallback to the manual path. If the
+        # block is ABSENT, fall through to the manual Google Cloud Console
+        # walkthrough (the right path for non-welance forkers).
+        from .secrets_vault import (
+            VaultError,
+            fetch_credentials_json_from_config,
         )
+
+        try:
+            fetched, msg = fetch_credentials_json_from_config()
+        except VaultError as e:
+            typer.secho("✗ 1Password fetch failed:", fg="red")
+            typer.echo(str(e), err=True)
+            typer.echo(
+                "\nFix the error above and re-run `invoicer init`. "
+                "To switch to manual Google Cloud Console setup instead, "
+                "remove the `secrets:` block from invoicer.yaml.",
+                err=True,
+            )
+            return False, False
+
+        if fetched:
+            typer.secho(f"✓ {msg}", fg="green")
+        else:
+            # No secrets block → manual walkthrough for non-welance forkers.
+            _explain_google_oauth_setup()
+            if not _wait_for_credentials_json():
+                return False, False
+            typer.secho(
+                f"✓ Found {_credentials_path().name}", fg="green"
+            )
 
     # credentials.json now exists. Trigger the OAuth flow unless we're
     # already authenticated and force wasn't set.

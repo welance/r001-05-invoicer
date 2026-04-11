@@ -15,8 +15,13 @@ defaults_app = typer.Typer(
     no_args_is_help=False,
     invoke_without_command=True,
 )
+secrets_app = typer.Typer(
+    help="Fetch / inspect secrets referenced by invoicer.yaml (1Password, …)",
+    no_args_is_help=True,
+)
 app.add_typer(client_app, name="client")
 app.add_typer(defaults_app, name="defaults")
+app.add_typer(secrets_app, name="secrets")
 
 
 def _version_callback(value: bool) -> None:
@@ -357,6 +362,57 @@ def defaults_unset(
         typer.echo(str(e), err=True)
         raise typer.Exit(1) from e
     typer.echo(f"✓ Unset defaults.{key}.")
+
+
+@secrets_app.command("fetch")
+def secrets_fetch(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Overwrite the local credentials.json if it already exists.",
+    ),
+) -> None:
+    """Pull credentials.json from the vault configured in invoicer.yaml.
+
+    Reads the `secrets.credentials_json` block and uses 1Password CLI
+    (`op`) to fetch the file. Useful after the admin rotates the Google
+    Cloud OAuth client: admin updates the 1Password item, every colleague
+    runs `invoicer secrets fetch --force` to pull the new file. Refuses
+    to overwrite an existing local credentials.json unless --force is
+    passed, so you can't stomp on a manually-placed file by accident.
+    """
+    from .config import get_project_root
+    from .secrets_vault import (
+        VaultError,
+        fetch_credentials_json_from_config,
+    )
+
+    load_env()
+
+    target = get_project_root() / "credentials.json"
+    if target.exists() and not force:
+        typer.echo(
+            f"{target} already exists. Use --force to overwrite.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    try:
+        fetched, msg = fetch_credentials_json_from_config()
+    except VaultError as e:
+        typer.echo(f"✗ {e}", err=True)
+        raise typer.Exit(1) from e
+
+    if not fetched:
+        typer.echo(
+            f"Nothing to fetch — {msg}. "
+            f"Add a `secrets:` block to invoicer.yaml (see "
+            f"`invoicer help getting-started`).",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"✓ {msg}")
 
 
 @app.command()

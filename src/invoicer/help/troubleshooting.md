@@ -96,6 +96,39 @@ See `invoicer help italy-sdi` → "If SDI rejects" section. You can't edit a fin
 
 **Fix**: add credits at https://console.anthropic.com/settings/billing. Or skip the LLM entirely and run `invoicer client add --no-ai` to answer the field prompts manually — no Anthropic key required.
 
+## `1Password CLI ('op') is not installed`
+
+**Cause**: your `invoicer.yaml` has a `secrets.credentials_json` block pointing at a 1Password vault, but `op` isn't on your PATH.
+
+**Fix**:
+- macOS: `brew install 1password-cli`
+- Windows: https://app-updates.agilebits.com/product_history/CLI2
+- Linux: https://developer.1password.com/docs/cli/get-started/
+
+Then open the 1Password desktop app → Settings → Developer → check **"Integrate with 1Password CLI"**. The next time you run `invoicer init`, `op` will biometric-prompt and the fetch will succeed.
+
+If you don't use 1Password, remove the `secrets:` block from `invoicer.yaml` — the tool will fall back to the manual Google Cloud Console walkthrough.
+
+## `Not signed in to 1Password CLI`
+
+**Cause**: `op` is installed but no 1Password session is active.
+
+**Fix**: either
+- Open the 1Password desktop app and unlock it. If you have the CLI integration enabled (Settings → Developer → "Integrate with 1Password CLI"), the next `op` command will biometric-prompt and succeed. This is the recommended path.
+- Or run `op signin` in your shell once per session (30-minute idle timeout).
+
+Verify with `op whoami` — it should return your email.
+
+## `Failed to fetch op://<vault>/<item>/credentials.json`
+
+**Cause**: `op` is signed in, but the fetch failed. Three common reasons in order of likelihood:
+
+1. **You're not a member of the vault.** Ask the 1Password admin to add you to the vault (for welance: `p007-01 Welance`).
+2. **Vault or item name has a typo in `invoicer.yaml`.** 1Password is case-sensitive and exact-match. Open the item in the 1Password web UI and copy the exact vault name / item name.
+3. **The file field inside the item is named something other than `credentials.json`.** Open the item and check the attachment name.
+
+The error output includes which email `op` is signed in as and the raw `op` stderr — use both to diagnose.
+
 ## Nothing above matches
 
 Open an issue at https://github.com/welance/r001-05-invoicer/issues/new/choose with:

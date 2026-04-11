@@ -3,6 +3,28 @@
 # which Qonto org (for multi-entity setups), the Clockify → Qonto mapping,
 # and the per-project billing terms.
 
+# -------- Secrets ----------------------------------------------------------
+# Where the tool fetches credentials.json (Gmail OAuth client) from at
+# setup time. Uncomment and edit to point at your 1Password vault — the
+# tool will use the 1Password CLI (`op`) to fetch the file automatically
+# during `invoicer init`, so no colleague has to walk the Google Cloud
+# Console setup by hand.
+#
+# Requires 1Password CLI (`brew install 1password-cli`) and the desktop-app
+# integration enabled (1Password app → Settings → Developer →
+# "Integrate with 1Password CLI").
+#
+# If this block is OMITTED, `invoicer init` falls back to printing the
+# 4-step Google Cloud Console walkthrough for manual setup. Keep it that
+# way if you're forking this tool outside welance.
+#
+# secrets:
+#   credentials_json:
+#     source: 1password
+#     vault: "p007-01 Welance"            # your 1Password vault name (exact, case-sensitive)
+#     item: invoicer-credentials-json     # item name inside the vault
+#     file: credentials.json              # file attachment / field name inside the item
+
 # -------- Orgs -------------------------------------------------------------
 # Each Qonto organization you invoice from. Each org has its own login slug
 # and API secret — Qonto's API is per-org-scoped, not per-user, so two legal
