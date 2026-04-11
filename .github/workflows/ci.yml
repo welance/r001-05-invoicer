@@ -46,7 +46,11 @@ jobs:
           .venv/bin/invoicer update --help
           .venv/bin/invoicer discover --help
           .venv/bin/invoicer client add --help
+          .venv/bin/invoicer defaults --help
+          .venv/bin/invoicer defaults set --help
+          .venv/bin/invoicer defaults unset --help
           .venv/bin/invoicer draft --help
           .venv/bin/invoicer finalize --help
           .venv/bin/invoicer mail-draft --help
           .venv/bin/invoicer help --help
+          .venv/bin/invoicer help multi-org

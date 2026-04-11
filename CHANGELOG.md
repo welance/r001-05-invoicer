@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-11
+
+### Added
+
+- **Multi-org support** — invoice from more than one legal entity (e.g. SRL
+  + GmbH) out of a single installation. `invoicer.yaml` gets an `orgs:`
+  block that maps an org id to its country and the env-var names that hold
+  its Qonto credentials. `draft`, `client add`, `mail-draft`, `finalize`,
+  and `discover` all accept a new `--org` flag; when absent, the tool
+  resolves the active org via project-level pin → `defaults.org` →
+  single-org shortcut → interactive prompt. The prompt path then offers to
+  save the picked value as the default so you only pay the prompt tax once.
+  See `invoicer help multi-org` for the full setup story.
+- **`invoicer defaults` command group** — inspect and edit cached routing
+  answers in `invoicer.yaml`.
+  - `invoicer defaults` — rich table of current defaults
+  - `invoicer defaults set` — walk known keys with questionary prompts,
+    diff, confirm, write
+  - `invoicer defaults set --ai` — describe the defaults you want in
+    free-form text; Haiku maps it to keys via an **enum-constrained schema**
+    that cannot hallucinate org ids. Diff + confirm + write.
+  - `invoicer defaults unset <key>` — remove one default
+  Known keys: `org`, `locale`, `gmail_sender`. The writer does targeted
+  text surgery on `invoicer.yaml` so comments and formatting around the
+  `defaults:` block survive untouched.
+- **New help topic `multi-org`** covering `orgs:`/`defaults:` schema, the
+  `--org` resolution chain, SDI-gating on org country, Gmail-across-orgs
+  story, and the legacy single-org fallback.
+- **`invoicer init` walks multi-org** — prompts for one or more Qonto orgs,
+  writes per-org env vars (`QONTO_LOGIN_<SUFFIX>` / `QONTO_SECRET_KEY_<SUFFIX>`),
+  runs one connectivity test per org, and prints an `orgs:` YAML snippet to
+  paste into `invoicer.yaml`.
+
+### Fixed
+
+- **TP02/MP05 SDI payment codes no longer leak onto non-Italian invoices.**
+  Before 0.4.0, `qonto.build_invoice_payload` hardcoded `payment_reporting:
+  {conditions: TP02, method: MP05}` on *every* draft, regardless of the
+  seller's country. For a German welance Ventures GmbH invoice this meant
+  shipping Italian e-invoicing metadata to Qonto DE — either silently
+  accepted but semantically wrong, or rejected at finalize time. The
+  builder is now `payment_reporting: dict | None = None` and `cli.draft`
+  only passes the IT codes when the active org has `country: IT` in
+  `invoicer.yaml`.
+
+### Changed
+
+- **`invoicer client add --locale`** help string narrowed to advertise
+  `it, en, de` only — these are the three actually used by the welance
+  team. The flag still accepts any value; it just doesn't suggest others.
+- **`invoicer discover`** now accepts `--org` and lists Qonto clients from
+  one org at a time. Run it twice (or pass `--org` on each) to see both
+  accounts' inventories.
+- **`resolve_qonto_client_id`** now accepts an optional `org_id` and filters
+  client mappings by their `org:` field if set — so the same Clockify client
+  can map to different Qonto clients across the SRL and GmbH accounts.
+- **Legacy `QONTO_LOGIN` / `QONTO_SECRET_KEY`** are no longer in `REQUIRED_ENV`;
+  the check moved into `_resolve_org()` so the error message cites
+  `invoicer.yaml` and tells the user how to migrate. Existing single-org
+  installs keep working — nothing to change if you don't want to.
+- **`CLAUDE.md` safety invariants extended**: explicit rules that defaults
+  only cache routing answers (never confirmations), that Gmail sender and
+  authenticated mailbox are distinct, and that SDI codes are gated on the
+  active org's country.
+
 ## [0.3.0] - 2026-04-11
 
 ### Changed
