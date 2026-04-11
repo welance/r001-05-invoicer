@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-04-11
+
+### Fixed
+
+- **`invoicer defaults` no longer crashes with a Python traceback when
+  invoicer.yaml is missing.** The 0.4.0 release introduced a regression:
+  running `invoicer defaults` from a directory without a project config
+  (a fresh clone, or a user exploring from the wrong `cwd`) blew up
+  with a `RuntimeError` from `load_yaml()` via `get_defaults()`. Read
+  operations on cached config should degrade gracefully — the listing
+  path now returns `{}` when no yaml exists and prints a friendly "no
+  invoicer.yaml here, run `invoicer init`" message. `defaults set` /
+  `unset` (the mutating paths) still require a valid yaml but report
+  a clean error instead of a traceback. New unit tests lock the
+  graceful-missing-file path in for `get_defaults`, `list_orgs`,
+  and the `_defaults_root` CLI handler.
+
+### Added
+
+- **Shell autocomplete — documented, not new.** Typer already provides
+  `invoicer --install-completion` and `invoicer --show-completion` out
+  of the box (auto-detects bash / zsh / fish / powershell). The
+  `getting-started` help topic and the README Install section now
+  tell non-technical users to run it once per shell.
+
 ## [0.4.0] - 2026-04-11
 
 ### Added

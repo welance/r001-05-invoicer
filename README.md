@@ -100,6 +100,9 @@ uv pip install -e .
 
 # Or install globally as a tool on your PATH
 uv tool install --editable .
+
+# Enable tab-completion for your shell (optional, one-time)
+invoicer --install-completion
 ```
 
 ## Configure

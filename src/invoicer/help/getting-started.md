@@ -39,8 +39,25 @@ After `invoicer init`, open `invoicer.yaml` and add:
 
 Get IDs by running `invoicer discover` — it lists your Clockify and Qonto inventories.
 
+## Shell autocomplete (optional but nice)
+
+Tab-completion for `invoicer` commands, options, and subcommand names comes for free via Typer. Run it once per shell:
+
+```bash
+invoicer --install-completion
+```
+
+This detects your shell (bash, zsh, fish, or PowerShell) and writes the completion script to the right place. Open a new terminal, type `invoicer ` and press Tab — you'll see `init`, `draft`, `defaults`, `client add`, etc. listed as you type.
+
+To see the script without installing it (e.g. to review before adding it to your dotfiles):
+
+```bash
+invoicer --show-completion
+```
+
 ## Next steps
 
 - `invoicer help workflow` — the monthly 4-command invoicing flow
+- `invoicer help multi-org` — invoicing from multiple legal entities (SRL + GmbH)
 - `invoicer help italy-sdi` — Italian e-invoicing specifics
 - `invoicer help troubleshooting` — common errors and recovery

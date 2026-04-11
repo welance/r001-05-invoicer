@@ -109,8 +109,18 @@ def _render_block(defaults: dict) -> str:
 def _write_block(new_defaults: dict) -> None:
     """Surgically replace (or insert, or delete) the `defaults:` block in
     invoicer.yaml. Preserves every other line of the file verbatim.
+
+    Raises FileNotFoundError with a friendly message when invoicer.yaml
+    doesn't exist — the CLI layer catches this and prints a cleaner
+    error pointing at `invoicer init`.
     """
     path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `invoicer init` from your project "
+            f"directory first, or cd into the directory that has your "
+            f"invoicer.yaml. Current directory: {path.parent}"
+        )
     text = path.read_text()
     lines = text.splitlines(keepends=True)
     found = _find_defaults_block(lines)

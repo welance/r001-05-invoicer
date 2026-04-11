@@ -157,24 +157,36 @@ _MULTI_ORG_FIXTURE = {
 
 class TestListOrgs:
     def test_lists_orgs_when_present(self):
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             orgs = list_orgs()
         assert len(orgs) == 2
         assert orgs[0]["id"] == "welance-srl"
 
     def test_empty_when_no_orgs_block(self):
-        with patch("invoicer.project_config.load_yaml", return_value={"projects": {}}):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value={"projects": {}},
+        ):
             assert list_orgs() == []
 
 
 class TestGetOrg:
     def test_found(self):
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             org = get_org("welance-gmbh")
         assert org["country"] == "DE"
 
     def test_missing_raises(self):
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             with pytest.raises(RuntimeError, match="not found"):
                 get_org("welance-nope")
 
@@ -186,7 +198,10 @@ class TestActivateOrg:
         monkeypatch.delenv("QONTO_LOGIN", raising=False)
         monkeypatch.delenv("QONTO_SECRET_KEY", raising=False)
 
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             activate_org("welance-gmbh")
 
         assert os.environ["QONTO_LOGIN"] == "welance-gmbh-9999"
@@ -195,7 +210,10 @@ class TestActivateOrg:
     def test_missing_env_var_raises(self, monkeypatch):
         monkeypatch.delenv("QONTO_LOGIN_SRL", raising=False)
         monkeypatch.delenv("QONTO_SECRET_KEY_SRL", raising=False)
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             with pytest.raises(RuntimeError, match="not set"):
                 activate_org("welance-srl")
 
@@ -216,10 +234,33 @@ class TestResolveClientWithOrg:
 
 class TestGetDefaults:
     def test_reads_defaults_block(self):
-        with patch("invoicer.project_config.load_yaml", return_value=_MULTI_ORG_FIXTURE):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value=_MULTI_ORG_FIXTURE,
+        ):
             d = get_defaults()
         assert d == {"org": "welance-srl", "locale": "it"}
 
     def test_empty_when_no_defaults(self):
-        with patch("invoicer.project_config.load_yaml", return_value={"projects": {}}):
+        with patch(
+            "invoicer.project_config.load_yaml_or_empty",
+            return_value={"projects": {}},
+        ):
             assert get_defaults() == {}
+
+    def test_empty_when_invoicer_yaml_missing(self, tmp_path, monkeypatch):
+        """Regression: `invoicer defaults` must NOT crash with a traceback
+        when invoicer.yaml doesn't exist in the current directory.
+
+        The failing case happens e.g. when a user runs `invoicer defaults`
+        from a clone that hasn't gone through `invoicer init` yet.
+        """
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        # Fresh tmp_path has no invoicer.yaml — get_defaults should return {}
+        assert get_defaults() == {}
+
+    def test_list_orgs_empty_when_invoicer_yaml_missing(self, tmp_path, monkeypatch):
+        """Same regression guard for list_orgs — it feeds into _resolve_org,
+        which must work before `invoicer init` has run."""
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        assert list_orgs() == []
