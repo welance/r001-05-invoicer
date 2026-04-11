@@ -68,9 +68,10 @@ Concretely:
 ```
 invoicer init                                  # Interactive first-run setup
 invoicer help [topic]                          # Long-form help: getting-started, workflow, italy-sdi, troubleshooting, security
+invoicer update                                # git pull + reinstall (for editable installs from a clone)
 invoicer discover                              # List Clockify + Qonto inventories
-invoicer client extract                        # LLM-parse company details from pasted text (Anthropic Haiku)
-invoicer client add                            # Extract → review → POST /v2/clients to Qonto
+invoicer client add                            # Paste company text → Haiku extracts → review → POST /v2/clients to Qonto
+invoicer client add --no-ai                    # Same, but answer stepped field prompts manually (no LLM, no Anthropic key)
 invoicer draft <project> --month YYYY-MM       # Build a Qonto draft invoice (project: alias, name, or id — fuzzy matched)
 invoicer finalize <invoice_id>                 # Finalize a draft. IRREVERSIBLE. Typed confirmation.
 invoicer mail-draft <invoice_id>               # Download PDF + CSV, create Gmail draft
@@ -118,7 +119,7 @@ Required variables:
 | `QONTO_SECRET_KEY` | Qonto → Settings → Integrations → API |
 | `GMAIL_SENDER` | The Gmail address that will own the drafts (e.g. `you@yourdomain.com`) |
 | `GMAIL_SENDER_NAME` | Optional. Display name used in the email signature. |
-| `ANTHROPIC_API_KEY` | Optional. Only needed for `invoicer client extract` / `client add`. |
+| `ANTHROPIC_API_KEY` | Optional. Only needed for `invoicer client add` in its default (AI) mode. Not required with `--no-ai`. |
 
 ### 2. Gmail API OAuth (one-time, ~15 minutes)
 
@@ -170,7 +171,7 @@ Four commands, two reviews (Qonto UI + Gmail UI), one physical click to send.
 - **`finalize` requires typed confirmation** of the invoice number — not just `y/N`. The invoice number is different for every invoice, so accidental confirmation is impossible.
 - **`mail-draft` never calls `smtplib.sendmail`, `messages.send`, or `drafts.send`.** The `gmail.modify` scope *does* technically allow these per Google's docs — the safety property is enforced at the code level, not the scope level. Audit `src/invoicer/gmail.py` to verify (the only Gmail API calls are `drafts().create()` and `drafts().update()`).
 - **Qonto is the single source of truth for client data** — the tool never caches client info locally. Every run fetches fresh data from Qonto.
-- **Rate math, VAT math, and payload building are pure functions** with no side effects. LLM is only invoked when the user opts in (`client extract`, `client add --from-file`). A happy-path monthly invoice run uses **zero LLM tokens**.
+- **Rate math, VAT math, and payload building are pure functions** with no side effects. LLM is only invoked when the user opts in (`client add` in its default AI mode). `client add --no-ai` and the whole monthly invoicing run use **zero LLM tokens**.
 - **Nothing that looks reversible is actually reversible past `finalize`.** Once Qonto finalizes an invoice, the number is locked and for Italian orgs the document is queued for SDI. Voiding requires a credit note.
 
 ## Italy / SDI specifics

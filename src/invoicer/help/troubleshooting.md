@@ -94,7 +94,7 @@ See `invoicer help italy-sdi` → "If SDI rejects" section. You can't edit a fin
 
 **Cause**: your Anthropic API key has no credits left.
 
-**Fix**: add credits at https://console.anthropic.com/settings/billing. Or use the manual form path (`invoicer client add` without `--from-file` for text input — but still needs the key for extraction).
+**Fix**: add credits at https://console.anthropic.com/settings/billing. Or skip the LLM entirely and run `invoicer client add --no-ai` to answer the field prompts manually — no Anthropic key required.
 
 ## Nothing above matches
 

@@ -38,6 +38,86 @@ def help(
 
 
 @app.command()
+def update() -> None:
+    """Pull the latest code and reinstall the CLI. One command for non-tech users.
+
+    Runs `git pull --ff-only` and then `uv tool install --editable . --force`
+    in the repo that backs this editable install. Refuses to run if the working
+    tree has uncommitted changes — fix those first.
+    """
+    import shutil
+    import subprocess
+
+    # Walk up from this file to find the .git that backs the editable install.
+    # If invoicer was installed via `uv tool install --editable .`, __file__
+    # points inside the user's clone and the walk finds the repo root.
+    here = Path(__file__).resolve()
+    repo_root: Path | None = None
+    for parent in here.parents:
+        if (parent / ".git").exists():
+            repo_root = parent
+            break
+    if repo_root is None:
+        typer.echo(
+            "Could not find a .git directory above the installed source.\n"
+            "This command only works for editable installs from a git clone\n"
+            "(`uv tool install --editable .`).",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    for tool in ("git", "uv"):
+        if shutil.which(tool) is None:
+            typer.echo(
+                f"`{tool}` is not on your PATH. Install it first and re-run.",
+                err=True,
+            )
+            raise typer.Exit(1)
+
+    status = subprocess.run(
+        ["git", "-C", str(repo_root), "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if status.returncode != 0:
+        typer.echo(f"`git status` failed:\n{status.stderr}", err=True)
+        raise typer.Exit(1)
+    if status.stdout.strip():
+        typer.echo(
+            f"You have local changes in {repo_root}:\n{status.stdout}"
+            "Commit, stash, or discard them before running `invoicer update`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo(f"→ Updating invoicer in {repo_root}", err=True)
+    typer.echo("→ git pull --ff-only", err=True)
+    pull = subprocess.run(
+        ["git", "-C", str(repo_root), "pull", "--ff-only"],
+        check=False,
+    )
+    if pull.returncode != 0:
+        typer.echo(
+            "`git pull --ff-only` failed. Your branch may have diverged from "
+            "the remote. Ask a developer to help, then re-run `invoicer update`.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    typer.echo("→ uv tool install --editable . --force", err=True)
+    install = subprocess.run(
+        ["uv", "tool", "install", "--editable", str(repo_root), "--force"],
+        check=False,
+    )
+    if install.returncode != 0:
+        typer.echo("`uv tool install` failed. See the output above.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo("\n✓ invoicer updated. Run `invoicer --help` to see what's new.")
+
+
+@app.command()
 def discover() -> None:
     """List Clockify projects/clients and Qonto clients to fill invoicer.yaml."""
     load_env()
@@ -59,60 +139,54 @@ def discover() -> None:
         typer.echo(f"  {c['id']}  {name}")
 
 
-@client_app.command("extract")
-def client_extract(
-    from_file: Path = typer.Option(None, "--from-file", "-f", help="Read source text from a file"),
-) -> None:
-    """Extract structured client fields from free-form text with Haiku.
-
-    Reads from stdin if --from-file is not given. Prints the extracted dict.
-    Does NOT create anything in Qonto — use `client add` for that.
-    """
-    load_env()
-    from .llm import extract_client_fields
-
-    if from_file:
-        text = from_file.read_text()
-    else:
-        typer.echo("Paste client text, then Ctrl-D (EOF) on its own line:", err=True)
-        text = sys.stdin.read()
-
-    if not text.strip():
-        typer.echo("No input text.", err=True)
-        raise typer.Exit(1)
-
-    fields = extract_client_fields(text)
-    typer.echo("\n== Extracted fields ==")
-    for k, v in fields.items():
-        typer.echo(f"  {k}: {v}")
-
-
 @client_app.command("add")
 def client_add(
-    from_file: Path = typer.Option(None, "--from-file", "-f", help="Read source text from a file"),
+    from_file: Path = typer.Option(
+        None, "--from-file", "-f", help="Read source text from a file (AI mode only)"
+    ),
     locale: str = typer.Option("en", help="Qonto client locale: en, it, de, fr, es"),
+    no_ai: bool = typer.Option(
+        False,
+        "--no-ai",
+        help="Skip LLM extraction; answer stepped field prompts manually.",
+    ),
 ) -> None:
-    """Create a new Qonto client. Extract with Haiku, review, then POST /v2/clients."""
-    import questionary
+    """Create a new Qonto client.
 
-    from .llm import extract_client_fields
+    Default: paste company text, Haiku extracts fields, you review, then
+    POST /v2/clients. With --no-ai: skip the LLM entirely and answer a
+    guided sequence of field prompts instead. To preview without creating,
+    decline the final confirmation.
+    """
+    import questionary
 
     load_env()
 
-    if from_file:
-        text = from_file.read_text()
+    if no_ai:
+        if from_file:
+            typer.echo("--no-ai cannot be combined with --from-file.", err=True)
+            raise typer.Exit(1)
+        fields: dict = {}
+        typer.echo(
+            "\n== Manual client entry (no LLM). Press Enter to leave a field empty. ==\n"
+        )
     else:
-        typer.echo("Paste client text, then Ctrl-D (EOF) on its own line:", err=True)
-        text = sys.stdin.read()
-    if not text.strip():
-        typer.echo("No input text.", err=True)
-        raise typer.Exit(1)
+        from .llm import extract_client_fields
 
-    typer.echo("Extracting fields with Haiku...", err=True)
-    fields = extract_client_fields(text)
+        if from_file:
+            text = from_file.read_text()
+        else:
+            typer.echo("Paste client text, then Ctrl-D (EOF) on its own line:", err=True)
+            text = sys.stdin.read()
+        if not text.strip():
+            typer.echo("No input text.", err=True)
+            raise typer.Exit(1)
 
-    typer.echo("\n== Extracted (edit any field, press Enter to accept) ==\n")
-    editable_keys = [
+        typer.echo("Extracting fields with Haiku...", err=True)
+        fields = extract_client_fields(text)
+        typer.echo("\n== Extracted (edit any field, press Enter to accept) ==\n")
+
+    base_keys = [
         "name",
         "country_code",
         "vat_number",
@@ -120,13 +194,20 @@ def client_add(
         "street_address",
         "city",
         "zip_code",
-        "province_code",
         "email",
-        "pec_email",
-        "recipient_code",
     ]
-    for k in editable_keys:
+    for k in base_keys:
         fields[k] = questionary.text(f"{k}:", default=str(fields.get(k, ""))).ask()
+
+    # Italian-specific fields: province_code, pec_email, recipient_code only
+    # make sense for IT-seated companies. Skip the prompts otherwise.
+    it_only_keys = ["province_code", "pec_email", "recipient_code"]
+    if (fields.get("country_code") or "").strip().upper() == "IT":
+        for k in it_only_keys:
+            fields[k] = questionary.text(f"{k}:", default=str(fields.get(k, ""))).ask()
+    else:
+        for k in it_only_keys:
+            fields.setdefault(k, "")
 
     if fields.get("confidence_notes"):
         typer.echo(f"\nLLM notes: {fields['confidence_notes']}")
