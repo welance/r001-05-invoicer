@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-04-11
+
+### Fixed
+
+- **Path resolution bug reported by a real user**: config files (`.env`,
+  `invoicer.yaml`, `credentials.json`, `token.json`) were resolved against
+  `Path(__file__).parents[2]`, which meant that after installing the tool
+  with `uv tool install --editable .` from one directory, running `invoicer`
+  from a DIFFERENT clone still read and wrote the original directory's files.
+  A user who cloned a fresh copy and ran `invoicer init` found their secrets
+  landing back in the original developer directory. Fixed by resolving the
+  project root from `$INVOICER_DIR` env var (if set) or CWD. Added regression
+  tests in `tests/unit/test_config.py`.
+- **`invoicer init` triggered an unsolicited Gmail OAuth browser flow** as a
+  side-effect of the "connection test". Now checks for `token.json` first and
+  only probes Gmail if the user has already completed OAuth via `mail-draft`.
+- **Better error messages** when config files are missing, including the exact
+  path being searched and a hint to `cd` to the project directory.
+
 ## [0.1.0] - 2026-04-11
 
 ### Fixed (pre-release audit)

@@ -23,36 +23,42 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 
-# gmail.modify: read/write mailbox but CANNOT send (no drafts.send, no messages.send).
-# Drafts.create is allowed. This is defense-in-depth.
+from .config import get_project_root
+
 SCOPES = ["https://www.googleapis.com/auth/gmail.modify"]
 
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-CREDENTIALS_PATH = _REPO_ROOT / "credentials.json"
-TOKEN_PATH = _REPO_ROOT / "token.json"
+
+def _credentials_path() -> Path:
+    return get_project_root() / "credentials.json"
+
+
+def _token_path() -> Path:
+    return get_project_root() / "token.json"
 
 
 def _get_credentials() -> Credentials:
+    creds_path = _credentials_path()
+    token_path = _token_path()
     creds: Credentials | None = None
-    if TOKEN_PATH.exists():
-        creds = Credentials.from_authorized_user_file(str(TOKEN_PATH), SCOPES)
+    if token_path.exists():
+        creds = Credentials.from_authorized_user_file(str(token_path), SCOPES)
     if not creds or not creds.valid:
         if creds and creds.expired and creds.refresh_token:
             creds.refresh(Request())
         else:
-            if not CREDENTIALS_PATH.exists():
+            if not creds_path.exists():
                 raise RuntimeError(
-                    f"credentials.json not found at {CREDENTIALS_PATH}. "
+                    f"credentials.json not found at {creds_path}. "
                     "Download the OAuth client credentials from Google Cloud Console "
-                    "(Desktop app type) and place them there."
+                    "(Desktop app type) and place them there, or run `invoicer init`."
                 )
             flow = InstalledAppFlow.from_client_secrets_file(
-                str(CREDENTIALS_PATH), SCOPES
+                str(creds_path), SCOPES
             )
             # Opens the user's default browser for consent. Uses an ephemeral
             # local HTTP server on a random port to receive the callback.
             creds = flow.run_local_server(port=0)
-        TOKEN_PATH.write_text(creds.to_json())
+        token_path.write_text(creds.to_json())
     return creds
 
 
