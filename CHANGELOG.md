@@ -7,6 +7,101 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-04-11
+
+### Added
+
+- **1Password-backed distribution for `credentials.json`.** New
+  `secrets:` block in `invoicer.yaml` lets a project declare which
+  1Password vault + item holds its Gmail OAuth client file. On
+  `invoicer init`, if `credentials.json` is missing locally AND the
+  `secrets:` block is declared, the tool uses the 1Password CLI (`op`)
+  to fetch the file directly from the vault, then runs the OAuth
+  flow — no manual Google Cloud Console walk required. Welance
+  colleagues can onboard in 3 commands: `brew install 1password-cli`,
+  `uv tool install --editable .`, `invoicer init`.
+  - Config shape: `secrets.credentials_json.{source, vault, item, file}`
+  - Only `source: 1password` is implemented today; the discriminator
+    leaves room for other vaults (Bitwarden, gcloud secret manager,
+    etc.) without a config migration.
+  - The `client_secret` inside `credentials.json` is, per Google's own
+    docs, not actually cryptographically secret for Desktop OAuth
+    clients — it's just a well-known identifier of the registered
+    client. So one file is safe to share across a team, each member
+    runs their own OAuth flow and gets their own `token.json` locally.
+    Access is gated by 1Password vault membership, rotated in one place.
+- **New `invoicer secrets fetch [--force]` command.** Explicit
+  re-fetch of `credentials.json` from the configured 1Password vault.
+  Useful when the admin rotates the Google Cloud OAuth client:
+  admin updates the 1Password item once, every colleague runs
+  `invoicer secrets fetch --force` on their machine to pull the new
+  file. Refuses to overwrite an existing local `credentials.json`
+  unless `--force` is passed, so you can't stomp on a manually-placed
+  file by accident.
+- **New `src/invoicer/secrets_vault.py` module** encapsulating the
+  1Password CLI wrapper: `check_op_installed`, `check_op_authenticated`
+  (returns signed-in email via `op whoami --format=json`),
+  `fetch_credentials_json` (uses `op read "op://..."` with the
+  secret-reference URI), and `fetch_credentials_json_from_config`.
+  All error paths raise `VaultError` with actionable recovery hints
+  that land directly in CLI output.
+
+### Changed
+
+- **README quick-start rewritten** to put the welance 1Password path
+  first: three commands (`brew install 1password-cli`, `uv tool install`,
+  `invoicer init`) and you're authenticated. The manual Google Cloud
+  Console walkthrough is still there, relegated to a fallback section
+  for non-welance forkers.
+- **`getting-started` help topic** reframed around the 1Password path
+  as primary, manual setup as fallback. Documents what's shared vs.
+  what's per-user (credentials.json is client identifier → shared OK;
+  token.json is per-user access+refresh → never shared). Includes
+  the exact welance `secrets:` YAML block for copy-paste.
+- **`_ensure_gmail_oauth` in `init_cmd.py`** now tries the 1P fetch
+  first when `secrets:` is declared. Fetch failures are HARD errors
+  when `secrets:` is declared — no silent fall-through to the manual
+  path, because the user explicitly opted into 1Password and a
+  silent fallback would hide the real problem (vault access revoked,
+  item renamed, etc.). Only when `secrets:` is absent does init
+  fall through to the manual Google Cloud Console walk.
+- **`troubleshooting` help topic** gains three new 1Password-specific
+  entries: "1Password CLI not installed", "Not signed in to 1Password
+  CLI", and "Failed to fetch op://<vault>/<item>/credentials.json"
+  with the three most likely causes in order.
+- **`invoicer.example.yaml`** gets a commented `secrets:` block
+  showing the welance values verbatim. Uncomment + paste into your
+  `invoicer.yaml` and you're done.
+- **`CLAUDE.md` safety invariants** get three new rules:
+  - Never log or echo `credentials.json` contents in any code path.
+    The bytes go from `subprocess.stdout` directly to disk via
+    `write_bytes()` — no intermediate string representation.
+    `TestNoSecretContentInErrorMessages` locks this in with a
+    regression test that fails if a future contributor adds a
+    print-stdout-on-error branch.
+  - `op` subprocess errors must surface cleanly with actionable
+    hints. Never catch `VaultError` silently and fall back to a
+    different setup path when the user opted into 1Password.
+  - The off-boarding flow for rotating the OAuth client is explicit:
+    delete the old Google Cloud client, replace in 1Password,
+    colleagues run `invoicer secrets fetch --force`. Old `token.json`
+    files fail on first refresh, triggering automatic re-auth.
+
+### Tests
+
+- **+19 unit tests** in `test_secrets_vault.py`: `check_op_installed`
+  present/absent, `check_op_authenticated` success/failure/timeout/
+  malformed-JSON, `fetch_credentials_json` success/failure/timeout/
+  nested-output-path, `fetch_credentials_json_from_config` missing-
+  secrets/empty-secrets/unsupported-source/missing-vault-or-item/
+  valid-config/default-file, `TestNoSecretContentInErrorMessages`
+  (regression against stdout-bytes leaking into error output), and
+  `TestFetchCredentialsJsonPathFromProject::test_respects_invoicer_dir`
+  (wiring between config loader and `INVOICER_DIR` override).
+- **All subprocess calls are mocked** — no real `op` binary required
+  in CI.
+- **193 passing** total (up from 174).
+
 ## [0.4.2] - 2026-04-11
 
 ### Changed

@@ -50,6 +50,8 @@ jobs:
           .venv/bin/invoicer defaults --help
           .venv/bin/invoicer defaults set --help
           .venv/bin/invoicer defaults unset --help
+          .venv/bin/invoicer secrets --help
+          .venv/bin/invoicer secrets fetch --help
           .venv/bin/invoicer draft --help
           .venv/bin/invoicer finalize --help
           .venv/bin/invoicer mail-draft --help

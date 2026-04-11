@@ -63,6 +63,35 @@ link will point at the wrong predecessor until you fix it.
   field in `invoicer.yaml`. Never pass them unconditionally —
   `qonto.build_invoice_payload` accepts `payment_reporting=None` precisely
   so non-IT orgs don't carry Italian e-invoicing metadata.
+- **`secrets_vault.py` must NEVER log or echo the contents of
+  `credentials.json`.** Subprocess stdout from `op read` is written
+  directly to disk via `output_path.write_bytes(result.stdout)` — the
+  bytes never land in a log, a print, an f-string, or an exception
+  message. Only subprocess **stderr** and our own diagnostic strings
+  (email of signed-in user, vault name, item name) may appear in
+  error output. `test_secrets_vault.py::TestNoSecretContentInErrorMessages`
+  locks this in with a regression test. If a future contributor adds
+  a print-stdout-on-error code path to help debugging, that test fails
+  — on purpose.
+- **`op` subprocess errors must surface cleanly with actionable recovery
+  hints.** Never catch `VaultError` silently and fall back to a different
+  setup path when the user explicitly opted into 1Password (i.e. when
+  `invoicer.yaml` has a `secrets:` block). Swallowing the error would
+  turn "you're not a vault member" into a mysterious "OAuth flow failed"
+  — a much worse debugging experience. The ONLY silent fallback allowed
+  is when the `secrets:` block is absent entirely (non-welance forkers
+  using the manual Google Cloud Console path).
+- **Off-boarding story for `credentials.json` rotation** (documented so
+  future-me can re-derive it): removing a colleague from the
+  `p007-01 Welance` 1Password vault revokes their ability to fetch new
+  copies, but their existing local `credentials.json` and `token.json`
+  keep working until someone explicitly revokes them. To invalidate
+  every active `token.json` across every machine, rotate the Google
+  Cloud OAuth client: delete the old client ID in Google Cloud Console,
+  generate a new `credentials.json`, replace the file in 1Password, and
+  every colleague runs `invoicer secrets fetch --force` on next use.
+  Old tokens fail on first refresh; new OAuth flow triggers
+  automatically via `_ensure_gmail_oauth`.
 
 ## Italian SDI specifics
 
