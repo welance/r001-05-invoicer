@@ -6,7 +6,13 @@ actually ships with the package and can be loaded via importlib.resources.
 
 import pytest
 
-from invoicer.help_cmd import TOPICS, _load_topic, list_topics, show_topic
+from invoicer.help_cmd import (
+    TOPICS,
+    _load_topic,
+    _previous_tag,
+    list_topics,
+    show_topic,
+)
 
 
 class TestTopicManifest:
@@ -39,6 +45,76 @@ class TestListTopics:
             assert name in captured.out, (
                 f"Topic {name!r} missing from list_topics output"
             )
+
+    def test_list_topics_shows_version(self, capsys):
+        """Regression: welcome panel must surface the installed version so
+        users (and especially non-tech colleagues) can tell which build they
+        have."""
+        from invoicer import __version__
+
+        list_topics()
+        captured = capsys.readouterr()
+        assert f"v{__version__}" in captured.out, (
+            "Version string missing from `invoicer help` welcome panel"
+        )
+
+    def test_list_topics_shows_release_notes_url(self, capsys):
+        list_topics()
+        captured = capsys.readouterr()
+        assert "github.com/welance/r001-05-invoicer/releases/tag/v" in captured.out, (
+            "Release-notes URL missing from `invoicer help` welcome panel"
+        )
+
+
+class TestPreviousTag:
+    """Parses CHANGELOG.md ## [X.Y.Z] headings to find the predecessor of a
+    given version. Returns None when the changelog isn't reachable or has
+    fewer than 2 tagged entries."""
+
+    def _write(self, tmp_path, content: str):
+        cl = tmp_path / "CHANGELOG.md"
+        cl.write_text(content)
+        return cl
+
+    def test_returns_predecessor_when_current_is_in_changelog(self, tmp_path, monkeypatch):
+        cl = self._write(
+            tmp_path,
+            "# Changelog\n\n## [Unreleased]\n\n## [0.4.1] - 2026-04-11\n\nfix stuff\n\n## [0.4.0] - 2026-04-11\n\nbig feature\n\n## [0.3.0] - 2026-04-11\n\nolder\n",
+        )
+        monkeypatch.setattr("invoicer.help_cmd._find_changelog", lambda: cl)
+        assert _previous_tag("0.4.1") == "0.4.0"
+        assert _previous_tag("0.4.0") == "0.3.0"
+
+    def test_returns_none_when_current_is_oldest(self, tmp_path, monkeypatch):
+        cl = self._write(
+            tmp_path,
+            "## [0.1.0] - 2026-01-01\ninitial release\n",
+        )
+        monkeypatch.setattr("invoicer.help_cmd._find_changelog", lambda: cl)
+        assert _previous_tag("0.1.0") is None
+
+    def test_falls_back_to_latest_when_current_unknown(self, tmp_path, monkeypatch):
+        """Dev builds between releases may have a __version__ that isn't in
+        CHANGELOG yet — point at the most recent tagged entry instead."""
+        cl = self._write(
+            tmp_path,
+            "## [0.4.1] - 2026-04-11\n\n## [0.4.0] - 2026-04-11\n",
+        )
+        monkeypatch.setattr("invoicer.help_cmd._find_changelog", lambda: cl)
+        assert _previous_tag("0.5.0.dev1") == "0.4.1"
+
+    def test_returns_none_when_changelog_missing(self, monkeypatch):
+        monkeypatch.setattr("invoicer.help_cmd._find_changelog", lambda: None)
+        assert _previous_tag("0.4.1") is None
+
+    def test_ignores_unreleased_heading(self, tmp_path, monkeypatch):
+        """`## [Unreleased]` has no X.Y.Z and must not confuse the parser."""
+        cl = self._write(
+            tmp_path,
+            "## [Unreleased]\n\n## [0.4.1] - 2026\n\n## [0.4.0] - 2026\n",
+        )
+        monkeypatch.setattr("invoicer.help_cmd._find_changelog", lambda: cl)
+        assert _previous_tag("0.4.1") == "0.4.0"
 
     def test_list_topics_includes_commands(self, capsys):
         """Regression: `invoicer help` must show the command list, not just topics."""

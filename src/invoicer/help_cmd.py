@@ -7,13 +7,60 @@ wheels alike.
 
 from __future__ import annotations
 
+import re
 from importlib.resources import files
+from pathlib import Path
 
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
 
+from . import __version__
+
 _console = Console()
+
+_REPO_URL = "https://github.com/welance/r001-05-invoicer"
+
+
+def _find_changelog() -> Path | None:
+    """Walk up from this module to find CHANGELOG.md. Works for editable
+    installs where the source sits inside a git clone; returns None for
+    wheel installs (CHANGELOG isn't bundled), so callers must tolerate
+    that case.
+    """
+    here = Path(__file__).resolve()
+    for parent in here.parents:
+        cl = parent / "CHANGELOG.md"
+        if cl.exists():
+            return cl
+    return None
+
+
+def _previous_tag(current: str) -> str | None:
+    """Find the version tag published before `current` by parsing
+    CHANGELOG.md's `## [X.Y.Z]` headings in file order. Returns None if
+    the changelog isn't reachable or has fewer than 2 tagged entries.
+    """
+    cl = _find_changelog()
+    if not cl:
+        return None
+    try:
+        text = cl.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    # Match ## [X.Y.Z] — ignore ## [Unreleased] headings.
+    tags = re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE)
+    if not tags:
+        return None
+    # Try to find `current` in the list; the next one is the previous tag.
+    if current in tags:
+        idx = tags.index(current)
+        if idx + 1 < len(tags):
+            return tags[idx + 1]
+        return None
+    # Current isn't in the changelog yet (e.g. dev build between releases).
+    # Fall back to the most recent tagged entry.
+    return tags[0]
 
 
 # Topics are ordered for the overview listing.
@@ -71,8 +118,21 @@ def _collect_commands() -> list[tuple[str, str]]:
 
 def list_topics() -> None:
     """Print the welcome panel with both the command list AND the topic index."""
+    previous = _previous_tag(__version__)
+    version_line = f"[bold]r001-05-invoicer v{__version__}[/bold] — Clockify → Qonto invoicing CLI"
+    release_url = f"{_REPO_URL}/releases/tag/v{__version__}"
+    link_lines = [
+        f"[dim]Release notes:[/dim]  {release_url}",
+    ]
+    if previous:
+        compare_url = f"{_REPO_URL}/compare/v{previous}...v{__version__}"
+        link_lines.append(
+            f"[dim]What changed since v{previous}:[/dim]  {compare_url}"
+        )
+
     lines: list[str] = [
-        "[bold]r001-05-invoicer[/bold] — Clockify → Qonto invoicing CLI",
+        version_line,
+        *link_lines,
         "",
         "[bold]Usage:[/bold]  [cyan]invoicer <command> [options][/cyan]",
         "",
