@@ -18,6 +18,7 @@ from invoicer.secrets_vault import (
     check_op_installed,
     fetch_credentials_json,
     fetch_credentials_json_from_config,
+    list_op_vaults,
 )
 
 
@@ -374,6 +375,115 @@ class TestNoSecretContentInErrorMessages:
         # But stdout bytes are NEVER in the message
         assert "DO_NOT_LEAK_THIS" not in msg
         assert "client_secret" not in msg
+
+
+class TestListOpVaults:
+    """list_op_vaults is a best-effort UX helper for the init flow.
+    Must never raise — empty list on any failure."""
+
+    def test_op_not_installed_returns_empty(self):
+        with patch("invoicer.secrets_vault.shutil.which", return_value=None):
+            assert list_op_vaults() == []
+
+    def test_success_returns_vault_names_in_order(self):
+        payload = json.dumps(
+            [
+                {"id": "abc", "name": "p007-01 Welance"},
+                {"id": "def", "name": "Personal"},
+                {"id": "ghi", "name": "Engineering"},
+            ]
+        )
+        mock_result = subprocess.CompletedProcess(
+            args=["op", "vault", "list"],
+            returncode=0,
+            stdout=payload,
+            stderr="",
+        )
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run", return_value=mock_result
+        ):
+            names = list_op_vaults()
+        assert names == ["p007-01 Welance", "Personal", "Engineering"]
+
+    def test_non_zero_exit_returns_empty(self):
+        mock_result = subprocess.CompletedProcess(
+            args=["op", "vault", "list"],
+            returncode=1,
+            stdout="",
+            stderr="not signed in",
+        )
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run", return_value=mock_result
+        ):
+            assert list_op_vaults() == []
+
+    def test_malformed_json_returns_empty(self):
+        mock_result = subprocess.CompletedProcess(
+            args=["op", "vault", "list"],
+            returncode=0,
+            stdout="not json at all",
+            stderr="",
+        )
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run", return_value=mock_result
+        ):
+            assert list_op_vaults() == []
+
+    def test_timeout_returns_empty(self):
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run",
+            side_effect=subprocess.TimeoutExpired(
+                cmd=["op", "vault", "list"], timeout=10
+            ),
+        ):
+            assert list_op_vaults() == []
+
+    def test_entry_without_name_is_skipped(self):
+        """Defensive parse: an entry missing the 'name' field is just
+        skipped, not a crash."""
+        payload = json.dumps(
+            [
+                {"id": "abc"},  # no name
+                {"id": "def", "name": "Good Vault"},
+                {"id": "ghi", "name": ""},  # empty name
+            ]
+        )
+        mock_result = subprocess.CompletedProcess(
+            args=["op", "vault", "list"],
+            returncode=0,
+            stdout=payload,
+            stderr="",
+        )
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run", return_value=mock_result
+        ):
+            names = list_op_vaults()
+        assert names == ["Good Vault"]
+
+    def test_non_list_payload_returns_empty(self):
+        """If op returns a dict or something else for some reason, don't crash."""
+        mock_result = subprocess.CompletedProcess(
+            args=["op", "vault", "list"],
+            returncode=0,
+            stdout='{"error": "nope"}',  # object, not list
+            stderr="",
+        )
+        with patch(
+            "invoicer.secrets_vault.shutil.which", return_value="/usr/local/bin/op"
+        ), patch(
+            "invoicer.secrets_vault.subprocess.run", return_value=mock_result
+        ):
+            assert list_op_vaults() == []
 
 
 class TestFetchCredentialsJsonPathFromProject:

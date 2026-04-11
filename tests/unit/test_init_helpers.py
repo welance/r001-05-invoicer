@@ -17,8 +17,11 @@ from invoicer.init_cmd import (
 )
 from invoicer.project_config import (
     _find_orgs_block,
+    _find_secrets_block,
     render_orgs_block,
+    render_secrets_block,
     write_orgs_block,
+    write_secrets_credentials_json_block,
 )
 
 
@@ -335,4 +338,184 @@ class TestWriteOrgsBlockRoundTrip:
                             "secret_env": "S",
                         }
                     ]
+                )
+
+
+class TestRenderSecretsBlock:
+    def test_empty_renders_empty(self):
+        assert render_secrets_block({}) == ""
+
+    def test_quotes_vault_name_with_spaces(self):
+        out = render_secrets_block(
+            {
+                "source": "1password",
+                "vault": "p007-01 Welance",
+                "item": "invoicer-credentials-json",
+                "file": "credentials.json",
+            }
+        )
+        # Vault name MUST be quoted because it has spaces
+        assert 'vault: "p007-01 Welance"' in out
+
+    def test_no_quotes_for_simple_vault_name(self):
+        out = render_secrets_block(
+            {
+                "source": "1password",
+                "vault": "Engineering",
+                "item": "invoicer-credentials-json",
+                "file": "credentials.json",
+            }
+        )
+        # No spaces → no quotes (cleaner output)
+        assert "vault: Engineering" in out
+        assert 'vault: "Engineering"' not in out
+
+    def test_fixed_key_order(self):
+        out = render_secrets_block(
+            {
+                "file": "credentials.json",
+                "source": "1password",
+                "vault": "V",
+                "item": "I",
+            }
+        )
+        lines = out.splitlines()
+        # Order is source → vault → item → file regardless of dict insertion
+        assert lines[0] == "secrets:"
+        assert lines[1] == "  credentials_json:"
+        assert lines[2] == "    source: 1password"
+        assert lines[3] == "    vault: V"
+        assert lines[4] == "    item: I"
+        assert lines[5] == "    file: credentials.json"
+
+    def test_skips_empty_values(self):
+        out = render_secrets_block(
+            {
+                "source": "1password",
+                "vault": "V",
+                "item": "",  # empty, must be skipped
+                "file": None,  # None, must be skipped
+            }
+        )
+        assert "item:" not in out
+        assert "file:" not in out
+
+
+class TestFindSecretsBlock:
+    def test_finds_simple_block(self):
+        lines = [
+            "# header\n",
+            "orgs:\n",
+            "  - id: a\n",
+            "\n",
+            "secrets:\n",
+            "  credentials_json:\n",
+            '    source: 1password\n',
+            '    vault: "p007-01 Welance"\n',
+            "    item: invoicer-credentials-json\n",
+            "    file: credentials.json\n",
+            "\n",
+            "clients:\n",
+            "  - foo: bar\n",
+        ]
+        found = _find_secrets_block(lines)
+        assert found is not None
+        start, end = found
+        assert start == 4
+        # End should include the blank line after the block but stop before `clients:`
+        assert end == 11
+
+    def test_missing_block(self):
+        lines = ["orgs:\n", "  - id: a\n", "clients:\n"]
+        assert _find_secrets_block(lines) is None
+
+    def test_ignores_nested_secrets_key(self):
+        lines = [
+            "projects:\n",
+            "  proj_abc:\n",
+            "    secrets:\n",  # nested — not a top-level key
+            "      foo: bar\n",
+        ]
+        assert _find_secrets_block(lines) is None
+
+
+class TestWriteSecretsCredentialsJsonBlockRoundTrip:
+    def _patch_root(self, tmp_path):
+        return patch(
+            "invoicer.project_config.get_project_root",
+            return_value=tmp_path,
+        )
+
+    def test_insert_into_yaml_with_no_secrets_block(self, tmp_path):
+        initial = (
+            "# my project\n"
+            "orgs:\n"
+            "  - id: welance-srl\n"
+            "    country: IT\n"
+            "    login_env: QONTO_LOGIN_WELANCE_SRL\n"
+            "    secret_env: QONTO_SECRET_KEY_WELANCE_SRL\n"
+            "\n"
+            "clients:\n"
+            "  - clockify_id: abc\n"
+        )
+        (tmp_path / "invoicer.yaml").write_text(initial)
+        with self._patch_root(tmp_path):
+            write_secrets_credentials_json_block(
+                vault="p007-01 Welance",
+                item="invoicer-credentials-json",
+                file="credentials.json",
+            )
+        text = (tmp_path / "invoicer.yaml").read_text()
+        # secrets block was inserted
+        assert "secrets:" in text
+        assert "credentials_json:" in text
+        assert 'vault: "p007-01 Welance"' in text  # quoted because of space
+        assert "item: invoicer-credentials-json" in text
+        # Original content survived
+        assert "# my project" in text
+        assert "QONTO_LOGIN_WELANCE_SRL" in text
+        assert "- clockify_id: abc" in text
+
+    def test_replace_existing_secrets_block_preserves_surrounding(self, tmp_path):
+        initial = (
+            "# header\n"
+            "secrets:\n"
+            "  credentials_json:\n"
+            "    source: 1password\n"
+            "    vault: Old Vault\n"
+            "    item: old-item\n"
+            "    file: old.json\n"
+            "\n"
+            "# below comment — MUST survive\n"
+            "orgs:\n"
+            "  - id: welance-srl\n"
+        )
+        (tmp_path / "invoicer.yaml").write_text(initial)
+        with self._patch_root(tmp_path):
+            write_secrets_credentials_json_block(
+                vault="New Vault With Space",
+                item="new-item",
+                file="credentials.json",
+            )
+        text = (tmp_path / "invoicer.yaml").read_text()
+        # New values present
+        assert 'vault: "New Vault With Space"' in text
+        assert "item: new-item" in text
+        assert "file: credentials.json" in text
+        # Old values GONE
+        assert "Old Vault" not in text
+        assert "old-item" not in text
+        assert "old.json" not in text
+        # Surrounding content survived
+        assert "# header" in text
+        assert "# below comment — MUST survive" in text
+        assert "- id: welance-srl" in text
+
+    def test_raises_when_invoicer_yaml_missing(self, tmp_path):
+        import pytest
+
+        with self._patch_root(tmp_path):
+            with pytest.raises(FileNotFoundError, match="Run `invoicer init`"):
+                write_secrets_credentials_json_block(
+                    vault="v", item="i", file="credentials.json"
                 )

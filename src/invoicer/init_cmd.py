@@ -512,6 +512,138 @@ def _explain_google_oauth_setup() -> None:
         webbrowser.open("https://console.cloud.google.com/projectcreate")
 
 
+def _setup_1password_credentials_interactively() -> bool:
+    """Interactive 1Password onboarding flow, triggered when init detects
+    credentials.json is missing AND invoicer.yaml has no `secrets:` block.
+
+    Steps:
+      1. Preflight — check `op` is installed and authenticated (clean
+         install / sign-in hints otherwise).
+      2. Prompt for the vault name. If we can enumerate vaults via
+         `op vault list`, show them as a picker; otherwise free text.
+      3. Prompt for the item name (default: invoicer-credentials-json)
+         and file field (default: credentials.json).
+      4. Run the fetch. Retry with different values on failure (or
+         abort the 1P path).
+      5. Persist the chosen vault/item/file to invoicer.yaml's `secrets:`
+         block so future runs skip this prompt entirely.
+
+    Returns True on success, False on any unrecoverable failure.
+    """
+    from . import project_config
+    from .secrets_vault import (
+        VaultError,
+        check_op_authenticated,
+        check_op_installed,
+        fetch_credentials_json,
+        list_op_vaults,
+    )
+
+    typer.echo()
+    typer.secho("== 1Password setup ==", fg="cyan", bold=True)
+
+    try:
+        check_op_installed()
+        signed_in_as = check_op_authenticated()
+    except VaultError as e:
+        typer.secho("✗ 1Password CLI not ready:", fg="red")
+        typer.echo(str(e), err=True)
+        typer.echo(
+            "\nFix the above and re-run `invoicer init` to try again.\n"
+            "Or pick 'Manual Google Cloud Console setup' from the previous "
+            "prompt if you'd rather not use 1Password.",
+            err=True,
+        )
+        return False
+
+    typer.echo(f"Signed in to 1Password as: {signed_in_as}\n")
+
+    vaults = list_op_vaults()
+    if vaults:
+        choices = [
+            questionary.Choice(title=v, value=v) for v in vaults
+        ]
+        choices.append(
+            questionary.Choice(title="Other (type it)", value="__other__")
+        )
+        vault = questionary.select(
+            "Which vault holds your credentials.json?",
+            choices=choices,
+        ).ask()
+        if vault == "__other__":
+            vault = questionary.text(
+                "Vault name (exact, case-sensitive):"
+            ).ask()
+    else:
+        typer.echo(
+            "(Couldn't enumerate your vaults automatically — type the name manually.)",
+            err=True,
+        )
+        vault = questionary.text(
+            "Which 1Password vault holds your credentials.json? "
+            "(exact, case-sensitive)"
+        ).ask()
+
+    if not vault:
+        typer.echo("No vault selected. Aborted.", err=True)
+        return False
+
+    item = questionary.text(
+        "Item name inside the vault:",
+        default="invoicer-credentials-json",
+    ).ask() or "invoicer-credentials-json"
+
+    file = questionary.text(
+        "File field name inside the item:",
+        default="credentials.json",
+    ).ask() or "credentials.json"
+
+    typer.echo(
+        f"\nFetching op://{vault}/{item}/{file} ...", err=True
+    )
+    try:
+        fetch_credentials_json(
+            vault=vault,
+            item=item,
+            file=file,
+            output_path=_credentials_path(),
+        )
+    except VaultError as e:
+        typer.secho("✗ Fetch failed:", fg="red")
+        typer.echo(str(e), err=True)
+        if questionary.confirm(
+            "\nTry again with different values?", default=True
+        ).ask():
+            return _setup_1password_credentials_interactively()
+        return False
+
+    typer.secho(
+        f"✓ Fetched {_credentials_path().name} from 1Password",
+        fg="green",
+    )
+
+    # Persist to invoicer.yaml so future runs skip the choice prompt.
+    try:
+        project_config.write_secrets_credentials_json_block(
+            vault=vault, item=item, file=file
+        )
+        typer.secho(
+            "✓ Added `secrets:` block to invoicer.yaml — future runs "
+            "will fetch automatically.",
+            fg="green",
+        )
+    except Exception as e:
+        typer.echo(
+            f"⚠ Could not persist secrets block to invoicer.yaml ({e}). "
+            "The fetch worked, but `invoicer init` will ask again next "
+            "time. You can add the block manually — see "
+            "`invoicer help getting-started`.",
+            err=True,
+        )
+
+    return True
+
+
 def _wait_for_credentials_json(timeout_sec: int = 300) -> bool:
     """Poll for credentials.json to appear at the expected path. Shows a
     rich spinner while waiting. Returns True on success, False on
@@ -564,18 +696,17 @@ def _ensure_gmail_oauth(*, force: bool) -> tuple[bool, bool]:
         return True, False
 
     if not _credentials_path().exists():
-        # Prefer 1Password fetch when invoicer.yaml declares a secrets block.
-        # If the fetch fails, hard-error — the user opted into 1Password and
-        # would be confused by a silent fallback to the manual path. If the
-        # block is ABSENT, fall through to the manual Google Cloud Console
-        # walkthrough (the right path for non-welance forkers).
+        # If invoicer.yaml ALREADY declares a secrets block, use it
+        # (hard-fail on errors — the user opted in). Otherwise, offer
+        # them a three-way interactive choice at this exact moment:
+        # 1Password, manual Google Cloud Console, or skip.
         from .secrets_vault import (
             VaultError,
             fetch_credentials_json_from_config,
         )
 
         try:
-            fetched, msg = fetch_credentials_json_from_config()
+            fetched, _msg = fetch_credentials_json_from_config()
         except VaultError as e:
             typer.secho("✗ 1Password fetch failed:", fg="red")
             typer.echo(str(e), err=True)
@@ -588,15 +719,57 @@ def _ensure_gmail_oauth(*, force: bool) -> tuple[bool, bool]:
             return False, False
 
         if fetched:
-            typer.secho(f"✓ {msg}", fg="green")
-        else:
-            # No secrets block → manual walkthrough for non-welance forkers.
-            _explain_google_oauth_setup()
-            if not _wait_for_credentials_json():
-                return False, False
             typer.secho(
-                f"✓ Found {_credentials_path().name}", fg="green"
+                f"✓ Fetched {_credentials_path().name} from 1Password",
+                fg="green",
             )
+        else:
+            # No secrets block declared. Propose the 1Password route
+            # interactively instead of silently falling back to the
+            # 15-minute Google Cloud Console walk. The manual path is
+            # still one click away for users who want it (or forkers
+            # without 1Password).
+            typer.echo(
+                f"\n{_credentials_path().name} not found at "
+                f"{_credentials_path().parent}.",
+                err=True,
+            )
+            choice = questionary.select(
+                "How would you like to set it up?",
+                choices=[
+                    questionary.Choice(
+                        title="Fetch from 1Password  — 30 seconds if you already use 1Password",
+                        value="1password",
+                    ),
+                    questionary.Choice(
+                        title="Manual Google Cloud Console setup  — ~15 minutes, 4 steps",
+                        value="manual",
+                    ),
+                    questionary.Choice(
+                        title="Skip for now  — come back later with `invoicer init`",
+                        value="skip",
+                    ),
+                ],
+            ).ask()
+
+            if choice == "skip" or choice is None:
+                typer.echo(
+                    "Skipped. Come back with `invoicer init` when you're ready.",
+                    err=True,
+                )
+                return False, False
+
+            if choice == "1password":
+                if not _setup_1password_credentials_interactively():
+                    return False, False
+            else:
+                # Manual Google Cloud Console path
+                _explain_google_oauth_setup()
+                if not _wait_for_credentials_json():
+                    return False, False
+                typer.secho(
+                    f"✓ Found {_credentials_path().name}", fg="green"
+                )
 
     # credentials.json now exists. Trigger the OAuth flow unless we're
     # already authenticated and force wasn't set.

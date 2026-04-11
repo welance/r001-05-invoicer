@@ -156,6 +156,43 @@ def fetch_credentials_json(
     output_path.write_bytes(result.stdout)
 
 
+def list_op_vaults() -> list[str]:
+    """Return the names of 1Password vaults the current `op` session can
+    see. Used by `invoicer init` to offer an interactive picker for the
+    vault name. Returns an empty list if `op` isn't installed, isn't
+    authenticated, or the command fails for any reason — callers fall
+    back to free-text input.
+
+    Never raises — this is a best-effort UX helper, not a required path.
+    """
+    if shutil.which("op") is None:
+        return []
+    try:
+        result = subprocess.run(
+            ["op", "vault", "list", "--format=json"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return []
+    if result.returncode != 0:
+        return []
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    names: list[str] = []
+    for entry in data:
+        if isinstance(entry, dict):
+            name = entry.get("name")
+            if name and isinstance(name, str):
+                names.append(name)
+    return names
+
+
 def fetch_credentials_json_from_config() -> tuple[bool, str]:
     """Read `secrets.credentials_json` from invoicer.yaml and fetch the
     file if configured. Returns (fetched, message).

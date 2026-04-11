@@ -7,6 +7,84 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-04-11
+
+### Changed
+
+- **`invoicer init` now PROPOSES the 1Password route interactively**
+  instead of silently falling back to the 15-minute Google Cloud
+  Console walkthrough when `credentials.json` is missing AND
+  `invoicer.yaml` has no `secrets:` block yet. You get a real
+  3-way choice at that exact moment:
+
+  ```
+  credentials.json not found at /path/to/credentials.json.
+  ? How would you like to set it up?
+    ❯ Fetch from 1Password  — 30 seconds if you already use 1Password
+      Manual Google Cloud Console setup  — ~15 minutes, 4 steps
+      Skip for now  — come back later with `invoicer init`
+  ```
+
+  If you pick **1Password**, the tool runs a full interactive
+  onboarding:
+  1. Pre-flights `op` installation + `op whoami` with actionable
+     recovery messages if either fails.
+  2. Enumerates your 1Password vaults via `op vault list --format=json`
+     and offers them as a picker (falls back to free-text input if
+     `op vault list` fails for any reason).
+  3. Prompts for the item name (default: `invoicer-credentials-json`)
+     and file field (default: `credentials.json`) — both standard
+     conventions, both editable.
+  4. Runs the fetch. On failure, offers to retry with different
+     values or abort the 1P path.
+  5. **Persists the successful vault/item/file combo to
+     `invoicer.yaml`'s `secrets:` block via text surgery**, so every
+     future `invoicer init` run skips this prompt entirely and goes
+     straight to the cached fetch.
+
+  Root cause of the bug this fixes: the 0.4.3 flow only checked for
+  an already-declared `secrets:` block. If none was declared, it fell
+  through to the manual Google Cloud Console walk without ever
+  mentioning 1Password. Users with 1Password installed but an empty
+  `secrets:` section never saw the 1P option offered — they'd just get
+  walked into the slow path by default. Shouldn't happen; doesn't
+  happen anymore.
+
+- **Manual Google Cloud Console path** is still one click away — it's
+  the second option in the picker. And "Skip for now" exits cleanly so
+  you can come back later without a dirty working tree.
+
+### Added
+
+- **`secrets_vault.list_op_vaults()`** — enumerates the current `op`
+  session's accessible vaults by parsing `op vault list --format=json`.
+  Returns an empty list on any failure (not installed, not
+  authenticated, malformed output, timeout) — callers fall back to
+  free-text input. Best-effort UX, never raises.
+- **`project_config.render_secrets_block(config)`** +
+  **`_find_secrets_block(lines)`** + **`write_secrets_credentials_json_block(vault, item, file)`**
+  — text-surgery helpers for the `secrets:` block in `invoicer.yaml`.
+  Same pattern as the existing `defaults:` and `orgs:` writers:
+  preserves comments and surrounding content, handles insert-when-
+  absent / replace-when-present cases cleanly. Vault names with
+  spaces are automatically quoted on write.
+- **`_setup_1password_credentials_interactively()`** in `init_cmd.py`
+  — drives the full interactive flow from the pre-flight checks to
+  the yaml persist step. Recursively retries on fetch failure (user
+  can type a different vault/item name without re-running init).
+
+### Tests
+
+- **+18 unit tests**:
+  - `list_op_vaults`: not-installed / success / non-zero-exit /
+    malformed-json / timeout / entry-without-name / non-list-payload
+  - `render_secrets_block`: empty / vault-name-with-spaces-quoted /
+    simple-vault-name-unquoted / fixed-key-order / skips-empty-values
+  - `_find_secrets_block`: simple / missing / ignores-nested
+  - `write_secrets_credentials_json_block`: insert-when-absent /
+    replace-preserving-surrounding / raises-when-yaml-missing
+- **211 passing** total (up from 193).
+
 ## [0.4.4] - 2026-04-11
 
 ### Changed
