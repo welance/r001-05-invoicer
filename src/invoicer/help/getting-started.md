@@ -21,9 +21,9 @@ This walks you through every environment variable interactively, writes your `.e
 
 `init` is **idempotent**: re-running it on an already-configured project detects what's already set and asks per-section "**K**eep / **E**dit / **A**dd another?" for each. It never forces you to hit Enter through 15 pre-filled prompts just to add one new org. Pass `--force` to bypass detection and walk through every section.
 
-## Gmail — the welance path (1Password)
+## Gmail — the 1Password path (recommended for teams)
 
-If your project config (`invoicer.yaml`) has a `secrets:` block pointing at a 1Password vault, the tool fetches `credentials.json` for you automatically. This is how the welance team works — one file in 1Password, shared across everyone.
+If your project config (`invoicer.yaml`) has a `secrets:` block pointing at a 1Password vault, the tool fetches `credentials.json` for you automatically. This works for **any 1Password user** — personal, Teams, or Business. The welance team uses it (vault `"p007-01 Welance"`, item `invoicer-credentials-json`), but the pattern is fully generic: pick your own vault, upload your `credentials.json` once, and everyone on the vault can clone-and-run without touching Google Cloud Console.
 
 **Prerequisites** (one-time, per machine):
 
@@ -38,33 +38,45 @@ If your project config (`invoicer.yaml`) has a `secrets:` block pointing at a 1P
    ```bash
    op whoami
    ```
-   This should return your welance email address. If it doesn't, sign into 1Password in the desktop app and retry.
+   This should return your 1Password account email. If it doesn't, sign into 1Password in the desktop app and retry.
 
-Once those three are done, `invoicer init` handles the rest: it reads the `secrets.credentials_json` block from `invoicer.yaml`, runs `op read "op://<vault>/<item>/credentials.json"`, writes the file next to `.env`, and walks you through the OAuth consent flow in your browser. Your personal `token.json` lives only on your machine — it's the per-user half of the OAuth pair.
+### Setting up the shared 1Password item (one-time per team)
 
-**The welance team's specific config** (already committed to `invoicer.example.yaml`, commented; uncomment and paste into your `invoicer.yaml`):
+Admin or first team member does this once:
 
-```yaml
-secrets:
-  credentials_json:
-    source: 1password
-    vault: "p007-01 Welance"
-    item: invoicer-credentials-json
-    file: credentials.json
-```
+1. Create a Google Cloud OAuth client (Desktop app type) — see the [manual fallback section below](#gmail--the-manual-path-without-1password) for the four steps. Download `credentials.json`.
+2. In the 1Password web UI, go to a **shared vault** that every colleague is (or will be) a member of.
+3. Click **New Item → Document**. Upload `credentials.json`. Name the item `invoicer-credentials-json` (or anything — this is the convention). Save.
+4. Paste the YAML block below into your team's `invoicer.yaml`, replacing the vault name with yours:
 
-**What's shared vs. what's yours alone**:
+   ```yaml
+   secrets:
+     credentials_json:
+       source: 1password
+       vault: "Your Vault Name"          # exact match, case-sensitive
+       item: invoicer-credentials-json
+       file: credentials.json
+   ```
 
-- **Shared** (via 1Password): `credentials.json` — the OAuth *client identifier*. Google's docs say the `client_secret` inside isn't actually a cryptographic secret for Desktop apps; it's just the well-known identifier of your registered OAuth client. One per Google Cloud project, good for everyone.
-- **Yours alone** (never synced): `token.json` — your personal access + refresh tokens, tied to *your* Google account. Written locally by the OAuth flow. Stays on your machine. If it leaks, you rotate your personal Google credentials. If 1Password access is revoked, your existing `token.json` keeps working until *you* revoke it.
+Every colleague runs `invoicer init`, the tool reads that block, runs `op read "op://Your Vault Name/invoicer-credentials-json/credentials.json"`, writes the file next to `.env`, and walks them through the OAuth consent flow in their own browser.
 
-**Rotating credentials** (admin flow): the admin updates the Document item in 1Password, then every colleague runs:
+### What's shared vs. what's yours alone
 
-```bash
-invoicer secrets fetch --force
-```
+- **Shared** (via 1Password): `credentials.json` — the OAuth **client identifier**. Google's docs say the `client_secret` inside isn't actually a cryptographic secret for Desktop apps; it's just the well-known identifier of your registered OAuth client. One per Google Cloud project, safe to share across a team, rotation done in one place.
+- **Yours alone** (never synced): `token.json` — your personal access + refresh tokens, tied to **your** Google account. Written locally by the OAuth flow on your machine. Stays on your machine. Drafts created by the tool land in the Gmail mailbox that authenticated that token — so even though your entire team shares one `credentials.json`, philipp@welance.com's drafts go to philipp's Drafts folder and enricoz@welance.com's go to enricoz's. If your 1Password access is revoked, your existing local `token.json` keeps working until *you* revoke it.
 
-to pull the new `credentials.json`. Takes 2 seconds each.
+### Rotating credentials (admin flow)
+
+When the OAuth client needs rotating (security review, compromise, or just good hygiene):
+
+1. Admin generates a new `credentials.json` in Google Cloud Console (can keep the old client alive temporarily if needed).
+2. Admin replaces the file in the 1Password Document item. One upload, done.
+3. Every colleague runs:
+   ```bash
+   invoicer secrets fetch --force
+   ```
+   to pull the new `credentials.json`. Takes 2 seconds each.
+4. Existing `token.json` files on every machine will fail on next refresh and automatically trigger re-auth via `invoicer mail-draft`'s OAuth flow.
 
 ## Gmail — the manual path (without 1Password)
 

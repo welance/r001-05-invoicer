@@ -5,25 +5,39 @@
 
 # -------- Secrets ----------------------------------------------------------
 # Where the tool fetches credentials.json (Gmail OAuth client) from at
-# setup time. Uncomment and edit to point at your 1Password vault — the
-# tool will use the 1Password CLI (`op`) to fetch the file automatically
-# during `invoicer init`, so no colleague has to walk the Google Cloud
-# Console setup by hand.
+# setup time. If you use 1Password — any plan: Personal, Teams, or
+# Business — you can upload credentials.json to a shared vault once and
+# every colleague with vault access runs `invoicer init` without ever
+# touching Google Cloud Console by hand.
 #
-# Requires 1Password CLI (`brew install 1password-cli`) and the desktop-app
-# integration enabled (1Password app → Settings → Developer →
-# "Integrate with 1Password CLI").
+# Requires 1Password CLI (`brew install 1password-cli` on macOS) and the
+# desktop-app integration enabled: 1Password app → Settings → Developer →
+# check "Integrate with 1Password CLI".
 #
-# If this block is OMITTED, `invoicer init` falls back to printing the
-# 4-step Google Cloud Console walkthrough for manual setup. Keep it that
-# way if you're forking this tool outside welance.
+# The pattern is fully generic. Pick your vault, pick your item name,
+# point this block at it. The welance team uses vault "p007-01 Welance"
+# with item "invoicer-credentials-json" — that's just one concrete
+# instance, shown in the commented example below.
 #
+# If this whole `secrets:` block is OMITTED, `invoicer init` falls back
+# to printing the 4-step Google Cloud Console walkthrough for creating
+# credentials.json by hand. Leave it out if you're not using 1Password.
+#
+# --- Generic template (uncomment and edit) ---
 # secrets:
 #   credentials_json:
 #     source: 1password
-#     vault: "p007-01 Welance"            # your 1Password vault name (exact, case-sensitive)
-#     item: invoicer-credentials-json     # item name inside the vault
-#     file: credentials.json              # file attachment / field name inside the item
+#     vault: "Your Vault Name"             # 1Password vault name — exact, case-sensitive
+#     item: invoicer-credentials-json      # item name inside the vault (convention)
+#     file: credentials.json               # file attachment / field name inside the item
+#
+# --- Welance-specific example (what we use internally) ---
+# secrets:
+#   credentials_json:
+#     source: 1password
+#     vault: "p007-01 Welance"
+#     item: invoicer-credentials-json
+#     file: credentials.json
 
 # -------- Orgs -------------------------------------------------------------
 # Each Qonto organization you invoice from. Each org has its own login slug
