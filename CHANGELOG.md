@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-04-11
+
+### Changed
+
+- **`invoicer init` is now idempotent.** Re-running on an already-configured
+  project no longer forces the user to hit Enter through 15 pre-filled
+  prompts just to add one new org. Each section detects existing config
+  up-front and asks **Keep / Edit / Add another?** via `questionary.select`:
+  - **Qonto** — detects existing `QONTO_LOGIN_*` / `QONTO_SECRET_KEY_*`
+    pairs in `.env`, summarizes them ("Found 2 orgs: welance-srl (IT),
+    welance-gmbh (DE)"), then asks. *Keep* skips the whole section;
+    *Edit* walks every org; *Add another* appends new orgs to the list.
+  - **Clockify** / **Gmail sender** / **Anthropic** — each detects its
+    existing value and offers keep/edit.
+  - **Gmail OAuth** — if `credentials.json` AND `token.json` exist and
+    the token validates against the Gmail API, skip the entire Google
+    Cloud Console walk silently. Only show the 4-step guide when
+    `credentials.json` is missing.
+- **Gmail OAuth setup is now hands-on.** On the missing-`credentials.json`
+  path, init opens the browser to the Google Cloud Console, then
+  **polls for the file to appear** via a rich spinner with a 5-minute
+  timeout and Ctrl-C escape. When it appears, init immediately triggers
+  the OAuth flow — which opens a second browser for account selection
+  and writes `token.json` — without requiring the user to re-run any
+  command. Previously the tool walked away after opening the first
+  browser tab, leaving the user to figure out when to re-run things.
+- **`orgs:` block is written to `invoicer.yaml` automatically**, not
+  printed as a copy-paste snippet. Init builds the target block from
+  the fresh Qonto credentials, diffs it against the existing one in
+  `invoicer.yaml`, and only prompts when they differ. The prompt
+  shows the proposed block and asks y/N before writing — same
+  confirm-before-mutation pattern the tool uses everywhere else.
+  Text surgery preserves comments and ordering in the rest of the file
+  (same approach as the 0.4.0 `defaults:` writer).
+- **Inline "save default org?"** at the end of init — when you've
+  configured at least one Qonto org and `defaults.org` isn't already
+  set, init offers to cache your pick so `draft` / `mail-draft` /
+  `client add` never have to prompt for `--org` again. Single-org setups
+  get a y/N; multi-org setups get a `questionary.select`.
+- **"Next steps" block now prints only the delta.** If you only
+  fixed a typo in a secret, there's nothing printed beyond "Nothing
+  changed. Run `invoicer draft …` when you're ready." If you added a
+  new org, the next step is `invoicer discover --org <new-org>`.
+
+### Added
+
+- **`invoicer init --force`** — skip the idempotency checks and re-prompt
+  every section even if it's already configured. For the rare case where
+  the state is correct but the user wants to walk through it anyway
+  (e.g. rotating a secret from scratch, or demoing the flow).
+
+### Tests
+
+- +29 unit tests: detection helpers (`_detect_qonto_orgs_in_env` for
+  single org / multi-org / unpaired / legacy / empty edge cases; plus
+  clockify/gmail/anthropic detectors), `_env_suffix` normalization,
+  `_orgs_blocks_differ` semantic comparison, `render_orgs_block` output
+  format, `_find_orgs_block` line-range detection, and
+  `write_orgs_block` round-trip (insert-when-absent,
+  replace-preserves-surrounding, raises-when-yaml-missing).
+- **174 passing** total (up from 145).
+
 ## [0.4.1] - 2026-04-11
 
 ### Fixed

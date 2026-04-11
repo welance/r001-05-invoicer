@@ -133,11 +133,22 @@ def _maybe_offer_save_as_default(key: str, value: str, prompted: bool) -> None:
 
 
 @app.command()
-def init() -> None:
-    """Interactive first-run setup. Prompts for API keys, tests every connection."""
+def init(
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Re-prompt every section even if already configured. Default: skip sections that are already set.",
+    ),
+) -> None:
+    """Interactive first-run setup. Prompts for API keys, tests every connection.
+
+    Idempotent: re-running this against an already-configured project skips
+    sections that have existing values and asks per-section whether you want
+    to keep, edit, or add. Pass --force to walk through every prompt.
+    """
     from .init_cmd import run_init
 
-    run_init()
+    run_init(force=force)
 
 
 @app.command()
