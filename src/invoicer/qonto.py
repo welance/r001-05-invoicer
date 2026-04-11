@@ -151,13 +151,15 @@ def build_invoice_payload(
     currency: str = "EUR",
     purchase_order: str | None = None,
     status: str = "draft",
-    payment_conditions: str = "TP02",  # full payment (Italian SDI)
-    payment_method_code: str = "MP05",  # bank transfer (Italian SDI)
+    payment_reporting: dict | None = None,
 ) -> dict:
     """Build the POST /v2/client_invoices request body with pre-built items.
 
-    For Italian orgs, `payment_methods` is an array of transfer objects and
-    `payment_reporting` carries the SDI conditions/method codes.
+    `payment_reporting` is only included in the payload when provided — for
+    Italian orgs the caller passes `{"conditions": "TP02", "method": "MP05"}`
+    (or similar SDI codes); for non-IT orgs the caller passes `None` and the
+    field is omitted entirely. Never set defaults here: the caller knows the
+    org country, this builder doesn't.
     """
     transfer: dict = {"type": "transfer", "iban": iban}
     if bic:
@@ -172,11 +174,9 @@ def build_invoice_payload(
         "status": status,
         "items": items,
         "payment_methods": transfer,
-        "payment_reporting": {
-            "conditions": payment_conditions,
-            "method": payment_method_code,
-        },
     }
+    if payment_reporting:
+        payload["payment_reporting"] = payment_reporting
     if purchase_order:
         payload["purchase_order"] = purchase_order
     return payload
