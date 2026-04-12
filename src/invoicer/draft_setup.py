@@ -19,6 +19,7 @@ separated from the interactive wrappers for testability.
 from __future__ import annotations
 
 import re
+import sys
 from difflib import SequenceMatcher
 
 import questionary
@@ -169,6 +170,67 @@ def _rank_qonto_clients(
     return [c for _, c in scored]
 
 
+def _create_client_inline(*, use_ai: bool, locale: str) -> dict:
+    """Run the client creation flow inline and return the created client dict.
+
+    Reuses the same field prompts and Qonto payload builder as `client add`.
+    """
+    from .summary import print_client_summary
+
+    if use_ai:
+        from .llm import extract_client_fields
+
+        typer.echo(
+            "\nPaste client text (company info, website, email…), "
+            "then Ctrl-D (EOF) on its own line:",
+            err=True,
+        )
+        text = sys.stdin.read()
+        if not text.strip():
+            typer.echo("No input text. Aborted.", err=True)
+            raise typer.Exit(1)
+        typer.echo("Extracting fields with Haiku...", err=True)
+        fields = extract_client_fields(text)
+        typer.echo("\n== Extracted (edit any field, press Enter to accept) ==\n")
+    else:
+        fields: dict = {}
+        typer.echo(
+            "\n== Manual client entry. Press Enter to leave a field empty. ==\n"
+        )
+
+    base_keys = [
+        "name", "country_code", "vat_number", "tax_identification_number",
+        "street_address", "city", "zip_code", "email",
+    ]
+    for k in base_keys:
+        fields[k] = questionary.text(f"{k}:", default=str(fields.get(k, ""))).ask()
+
+    it_only_keys = ["province_code", "pec_email", "recipient_code"]
+    if (fields.get("country_code") or "").strip().upper() == "IT":
+        for k in it_only_keys:
+            fields[k] = questionary.text(f"{k}:", default=str(fields.get(k, ""))).ask()
+    else:
+        for k in it_only_keys:
+            fields.setdefault(k, "")
+
+    if fields.get("confidence_notes"):
+        typer.echo(f"\nLLM notes: {fields['confidence_notes']}")
+
+    payload = qonto.build_client_payload(fields, locale=locale)
+    print_client_summary(
+        payload, endpoint="POST https://thirdparty.qonto.com/v2/clients",
+    )
+
+    if not questionary.confirm("Create this client in Qonto?", default=False).ask():
+        typer.echo("Aborted.", err=True)
+        raise typer.Exit(1)
+
+    created = qonto.create_client(payload)
+    typer.echo(f"\n✓ Created Qonto client: {created.get('id')}")
+    typer.echo(f"  Name: {created.get('name')}")
+    return created
+
+
 def ensure_client_mapping(
     *,
     clockify_client_id: str,
@@ -194,8 +256,29 @@ def ensure_client_mapping(
     typer.echo("Fetching Qonto client list...", err=True)
     qonto_clients = qonto.list_clients()
     if not qonto_clients:
-        typer.echo("No Qonto clients found. Create one first with `invoicer client add`.", err=True)
-        raise typer.Exit(1)
+        typer.echo("No Qonto clients found.", err=True)
+        create = questionary.select(
+            "Create one now?",
+            choices=[
+                questionary.Choice(title="Create new client (AI — paste text, Haiku extracts)", value="ai"),
+                questionary.Choice(title="Create new client (manual — field by field)", value="manual"),
+                questionary.Choice(title="Abort", value="abort"),
+            ],
+        ).ask()
+        if create == "abort" or not create:
+            raise typer.Exit(1)
+        locale = project_config.get_defaults().get("locale", "en")
+        created = _create_client_inline(use_ai=(create == "ai"), locale=locale)
+        qonto_client_id = created.get("id")
+        if not qonto_client_id:
+            typer.echo("Client creation returned no id. Aborted.", err=True)
+            raise typer.Exit(1)
+        mapping: dict = {"clockify_id": clockify_client_id, "qonto_id": qonto_client_id}
+        if org_id:
+            mapping["org"] = org_id
+        project_config.append_client_mapping(mapping)
+        typer.echo("✓ Saved client mapping → invoicer.yaml", err=True)
+        return qonto_client_id
 
     target_norm = (clockify_client_name or "").lower().strip()
     exact = [
@@ -224,6 +307,14 @@ def ensure_client_mapping(
             )
             for c in ranked[:10]
         ]
+        choices.append(questionary.Choice(
+            title="Create new client (AI — paste text, Haiku extracts)",
+            value="__create_ai__",
+        ))
+        choices.append(questionary.Choice(
+            title="Create new client (manual — field by field)",
+            value="__create_manual__",
+        ))
         choices.append(questionary.Choice(title="Enter UUID manually", value="__manual__"))
         choices.append(questionary.Choice(title="Abort", value="__abort__"))
 
@@ -235,6 +326,17 @@ def ensure_client_mapping(
         if picked == "__abort__" or not picked:
             typer.echo("Aborted.", err=True)
             raise typer.Exit(1)
+
+        if picked in ("__create_ai__", "__create_manual__"):
+            locale = project_config.get_defaults().get("locale", "en")
+            created = _create_client_inline(
+                use_ai=(picked == "__create_ai__"),
+                locale=locale,
+            )
+            picked = created.get("id")
+            if not picked:
+                typer.echo("Client creation returned no id. Aborted.", err=True)
+                raise typer.Exit(1)
 
         if picked == "__manual__":
             picked = questionary.text("Qonto client UUID:").ask()
