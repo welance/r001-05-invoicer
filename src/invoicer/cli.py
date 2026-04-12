@@ -184,13 +184,23 @@ def _defaults_root(ctx: typer.Context) -> None:
     load_env()
     current = defaults_mod.read_all()
 
-    # Build effective values: defaults: block + .env fallbacks.
     _ENV_FALLBACKS = {
         "gmail_sender": "GMAIL_SENDER",
     }
 
+    # All .env keys invoicer uses. Secrets are masked; non-secrets shown.
+    _ENV_KEYS: list[tuple[str, bool]] = [
+        ("CLOCKIFY_API_KEY", True),
+        ("CLOCKIFY_WORKSPACE_ID", False),
+        ("GMAIL_SENDER", False),
+        ("GMAIL_SENDER_NAME", False),
+        ("ANTHROPIC_API_KEY", True),
+    ]
+
     from rich.console import Console
     from rich.table import Table
+
+    console = Console()
 
     if not current and not yaml_path.exists():
         typer.echo(
@@ -200,25 +210,55 @@ def _defaults_root(ctx: typer.Context) -> None:
         )
         return
 
-    table = Table(title="invoicer defaults", title_style="bold green")
-    table.add_column("Key", style="cyan")
-    table.add_column("Value")
-    table.add_column("Source", style="dim")
+    # --- defaults: table ---
+    dt = Table(title="invoicer.yaml defaults", title_style="bold green")
+    dt.add_column("Key", style="cyan")
+    dt.add_column("Value")
+    dt.add_column("Source", style="dim")
     for k in defaults_mod.KNOWN_KEYS:
         val = current.get(k)
         if val:
-            table.add_row(k, str(val), "defaults:")
+            dt.add_row(k, str(val), "defaults:")
         else:
             env_key = _ENV_FALLBACKS.get(k)
             env_val = os.environ.get(env_key) if env_key else None
             if env_val:
-                table.add_row(k, str(env_val), f".env ({env_key})")
+                dt.add_row(k, str(env_val), f".env ({env_key})")
             else:
-                table.add_row(k, "[dim](unset)[/dim]", "")
-    Console().print(table)
+                dt.add_row(k, "[dim][not-set][/dim]", "")
+    console.print(dt)
+
+    # --- .env keys table ---
+    # Discover per-org Qonto keys dynamically from invoicer.yaml orgs.
+    from . import project_config
+
+    orgs = project_config.list_orgs()
+    org_keys: list[tuple[str, bool]] = []
+    for o in orgs:
+        login_env = o.get("login_env", "")
+        secret_env = o.get("secret_env", "")
+        if login_env:
+            org_keys.append((login_env, True))
+        if secret_env:
+            org_keys.append((secret_env, True))
+
+    all_env_keys = org_keys + _ENV_KEYS
+
+    et = Table(title=".env keys", title_style="bold green")
+    et.add_column("Key", style="cyan")
+    et.add_column("Value")
+    for env_key, is_secret in all_env_keys:
+        val = os.environ.get(env_key)
+        if val:
+            et.add_row(env_key, "[dim][*******][/dim]" if is_secret else val)
+        else:
+            et.add_row(env_key, "[dim][not-set][/dim]")
+    console.print(et)
+
     typer.echo(
-        "\nStored in invoicer.yaml under `defaults:`. "
-        "Edit via `invoicer defaults set` or `invoicer defaults unset <key>`.",
+        "\nDefaults stored in invoicer.yaml under `defaults:`. "
+        "Edit via `invoicer defaults set` or `invoicer defaults unset <key>`.\n"
+        "Env keys stored in .env. Edit via `invoicer init` or manually.",
         err=True,
     )
 
