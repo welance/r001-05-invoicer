@@ -39,8 +39,10 @@ invoicer init
 `invoicer init` asks for your Qonto + Clockify keys, fetches `credentials.json` from 1Password, opens the browser for Gmail account selection, and tests every connection. Then:
 
 ```bash
-invoicer draft <project-alias> --month 2026-04 --purchase-order "Attn: Nick"
+invoicer draft <project-alias-or-clockify-id> --month 2026-04 --purchase-order "Attn: Nick"
 ```
+
+First time using a new project? `draft` auto-onboards it: resolves the Qonto client by name, validates its data, synthesizes project settings with sensible defaults, and writes everything to `invoicer.yaml` — all in one guided flow, zero hand-editing required.
 
 ### Setting up the shared 1Password item (one-time, per team)
 

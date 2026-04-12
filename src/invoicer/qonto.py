@@ -114,6 +114,24 @@ def create_client(payload: dict) -> dict:
         return r.json().get("client", {})
 
 
+def update_client(client_id: str, payload: dict) -> dict:
+    """PATCH /v2/clients/{id}. Returns the updated client object.
+
+    Used by the draft wizard to fill missing required fields on an
+    existing Qonto client (VAT number, address, IT SDI fields, …) so
+    the invoice can be issued without leaving the CLI.
+    """
+    with _client() as c:
+        r = c.patch(f"/clients/{client_id}", json=payload)
+        if r.status_code >= 400:
+            raise httpx.HTTPStatusError(
+                f"Qonto rejected the client update: {r.status_code}\n{r.text}",
+                request=r.request,
+                response=r,
+            )
+        return r.json().get("client", {})
+
+
 def build_invoice_item(
     *,
     title: str,

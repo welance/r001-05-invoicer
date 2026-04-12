@@ -682,15 +682,9 @@ def draft(
         typer.echo(f"Invalid --month {month!r}, expected YYYY-MM.", err=True)
         raise typer.Exit(1) from e
 
-    # Fuzzy search for a project match. Prompt on ambiguity.
+    # Fuzzy search for a project match. If no match, try as a raw Clockify
+    # project id and walk the auto-onboarding wizard to register it.
     matches = project_config.find_projects(project)
-    if not matches:
-        typer.echo(
-            f"No project in invoicer.yaml matches {project!r}. "
-            f"Run `invoicer discover` or edit invoicer.yaml to add it.",
-            err=True,
-        )
-        raise typer.Exit(1)
     if len(matches) == 1:
         project_id, proj_cfg = matches[0]
         name = proj_cfg.get("name", "(unnamed)")
@@ -698,7 +692,7 @@ def draft(
         typer.echo(
             f"→ Matched: {name}  [{alias}]  ({project_id})", err=True
         )
-    else:
+    elif len(matches) > 1:
         choices = [
             questionary.Choice(
                 title=f"{(cfg or {}).get('name', '(unnamed)')}  "
@@ -715,6 +709,67 @@ def draft(
             typer.echo("Aborted.", err=True)
             raise typer.Exit(1)
         proj_cfg = project_config.get_project(project_id)
+    else:
+        # No match in invoicer.yaml — treat `project` as a raw Clockify id
+        # and try to onboard it via the wizard.
+        project_id = project
+        proj_cfg = None
+
+    # Resolve and activate Qonto org BEFORE any Qonto API call.
+    org_id, org_was_prompted = _resolve_org(
+        cli_override=org,
+        project_org=(proj_cfg or {}).get("org"),
+    )
+    org_country: str | None = None
+    if org_id:
+        org_cfg = project_config.activate_org(org_id)
+        org_country = (org_cfg.get("country") or "").upper() or None
+        typer.echo(f"→ Qonto org: {org_id}" + (f"  ({org_country})" if org_country else ""), err=True)
+
+    # Clockify → Qonto client resolution (with auto-onboarding wizard)
+    typer.echo("Fetching Clockify project...", err=True)
+    cp = clockify.get_project(project_id)
+    clockify_client_id = cp.get("clientId")
+    if not clockify_client_id:
+        typer.echo(f"Clockify project {project_id} has no client assigned.", err=True)
+        raise typer.Exit(1)
+
+    from . import draft_setup
+
+    # Auto-onboard: register client mapping + project if missing.
+    clockify_client_name = ""
+    if clockify_client_id:
+        try:
+            for cl in clockify.list_clients():
+                if cl["id"] == clockify_client_id:
+                    clockify_client_name = cl.get("name", "")
+                    break
+        except Exception:
+            pass
+
+    qonto_client_id = draft_setup.ensure_client_mapping(
+        clockify_client_id=clockify_client_id,
+        clockify_client_name=clockify_client_name,
+        org_id=org_id,
+    )
+
+    if proj_cfg is None:
+        # Validate the Qonto client is complete enough for invoicing.
+        qc_for_setup = draft_setup.ensure_client_complete(
+            qonto_client_id=qonto_client_id,
+            org_country=org_country,
+        )
+        qonto_client_country = (
+            (qc_for_setup.get("billing_address") or {}).get("country_code") or ""
+        ).upper() or None
+
+        proj_cfg = draft_setup.ensure_project_registered(
+            project_id=project_id,
+            clockify_project=cp,
+            org_country=org_country,
+            qonto_client_country=qonto_client_country,
+        )
+
     rate = float(proj_cfg["rate_eur_per_hour"])
     vat_rate = float(proj_cfg.get("vat_rate", 0))
     vat_exemption_reason = proj_cfg.get("vat_exemption_reason")
@@ -724,28 +779,6 @@ def draft(
         "description_template", "Consulting services — {month_name} {year}"
     )
     project_name_cfg = proj_cfg.get("name", project_id)
-
-    # Resolve and activate Qonto org BEFORE any Qonto API call.
-    org_id, org_was_prompted = _resolve_org(
-        cli_override=org,
-        project_org=proj_cfg.get("org"),
-    )
-    org_country: str | None = None
-    if org_id:
-        org_cfg = project_config.activate_org(org_id)
-        org_country = (org_cfg.get("country") or "").upper() or None
-        typer.echo(f"→ Qonto org: {org_id}" + (f"  ({org_country})" if org_country else ""), err=True)
-
-    # Clockify → Qonto client resolution
-    typer.echo("Fetching Clockify project...", err=True)
-    cp = clockify.get_project(project_id)
-    clockify_client_id = cp.get("clientId")
-    if not clockify_client_id:
-        typer.echo(f"Clockify project {project_id} has no client assigned.", err=True)
-        raise typer.Exit(1)
-    qonto_client_id = project_config.resolve_qonto_client_id(
-        clockify_client_id, org_id=org_id
-    )
 
     typer.echo("Fetching Qonto client...", err=True)
     qc = qonto.get_client(qonto_client_id)

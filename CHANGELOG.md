@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-12
+
+### Added
+
+- **`invoicer draft` auto-onboards new projects.** Running `draft` with a
+  raw Clockify project id that isn't in `invoicer.yaml` now launches a
+  guided wizard instead of a dead-end error. The wizard:
+  1. **Resolves the Qonto client** — exact-name match with a confirm gate,
+     or a ranked similarity picker when names don't align (C1 flow).
+  2. **Validates client completeness** — checks required fields for the
+     org's country (VAT, address, IT-specific SDI fields like
+     `recipient_code`/`pec_email`). Gaps are prompted field-by-field and
+     PATCHed directly to Qonto.
+  3. **Synthesizes project settings** — defaults rate from Clockify's
+     `hourlyRate`, VAT from the org↔client country pair, alias from the
+     project name prefix. A single review panel lets you accept-all or
+     edit any field before writing.
+  All three steps write to `invoicer.yaml` (via the existing text-surgery
+  helpers) and continue straight into the normal draft flow — one command,
+  zero hand-editing.
+
+- **`qonto.update_client`** — PATCH `/v2/clients/{id}` for filling missing
+  fields on existing Qonto clients without leaving the CLI.
+
+- **`project_config.append_client_mapping` / `append_project_entry`** — new
+  block-surgery helpers for programmatically appending `clients:` and
+  `projects:` entries to `invoicer.yaml`. Idempotent, comment-preserving.
+
+- **VAT defaults table** — `draft_setup.vat_defaults_for_country_pair`
+  encodes the common Italian / German country-pair rules (IT→IT: 22%,
+  IT→EU: 0% N3.2, IT→non-EU: 0% N3.1, DE→DE: 19%, DE→other: 0%).
+  Used as defaults in the project wizard; always overridable.
+
+- **65 new unit tests** (258 total). Covers block writers, VAT defaults,
+  alias derivation, client completeness checking, and project synthesis.
+
 ## [0.4.6] - 2026-04-11
 
 ### Changed

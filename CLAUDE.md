@@ -37,6 +37,11 @@ link will point at the wrong predecessor until you fix it.
 - **Every write command shows a rich pre-mutation summary panel + explicit
   confirm.** See `src/invoicer/summary.py`. Any new command that POSTs /
   PATCHes / PUTs needs one.
+- **`draft` auto-registration writes to `invoicer.yaml` only after a
+  confirm panel; never silent.** See `src/invoicer/draft_setup.py`. The
+  Qonto pre-mutation panel still runs after registration completes —
+  registering does not skip the invoice confirm. Client PATCHes go through
+  `print_client_summary` before writing.
 - **`src/invoicer/gmail.py` must never call `.send()` and must never import
   `smtplib`.** Enforced by AST tests in
   `tests/unit/test_help_topics.py::TestGmailModuleSafety`. The `gmail.modify`
