@@ -202,8 +202,8 @@ def _defaults_root(ctx: typer.Context) -> None:
     table.add_column("Key", style="cyan")
     table.add_column("Value")
     for k in defaults_mod.KNOWN_KEYS:
-        if k in current:
-            table.add_row(k, str(current[k]))
+        val = current.get(k)
+        table.add_row(k, str(val) if val else "[dim](unset)[/dim]")
     Console().print(table)
     typer.echo(
         "\nStored in invoicer.yaml under `defaults:`. "
