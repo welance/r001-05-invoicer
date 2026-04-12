@@ -1139,6 +1139,32 @@ def run_init(*, force: bool = False) -> None:
                         f"✗ Could not save default org: {e}", fg="red"
                     )
 
+    # --- Inline: save default gmail_sender? ---
+    gmail_sender = (
+        gmail_values.get("GMAIL_SENDER")
+        or final_values.get("GMAIL_SENDER")
+        or ""
+    ).strip()
+    if (
+        gmail_sender
+        and "gmail_sender" not in current_defaults
+        and yaml_path.exists()
+    ):
+        if questionary.confirm(
+            f"Save {gmail_sender!r} as the default gmail_sender?",
+            default=True,
+        ).ask():
+            try:
+                defaults_mod.set_default("gmail_sender", gmail_sender)
+                typer.secho(
+                    f"✓ defaults.gmail_sender = {gmail_sender}", fg="green"
+                )
+                touched.add("defaults")
+            except Exception as e:
+                typer.secho(
+                    f"✗ Could not save default gmail_sender: {e}", fg="red"
+                )
+
     # --- Delta "Next steps" ---
     _print_next_steps(touched, new_orgs, project_config)
 

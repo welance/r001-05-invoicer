@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-04-12
+
+### Changed
+
+- **`invoicer defaults` shows effective values with source labels.** Each
+  row now has a "Source" column: `defaults:` for explicitly saved defaults,
+  `.env (GMAIL_SENDER)` for values inherited from the environment. Unset
+  keys show "(unset)" instead of being silently omitted.
+
+- **`invoicer init` auto-saves `gmail_sender` to defaults.** When init
+  collects `GMAIL_SENDER`, it now offers to write it as
+  `defaults.gmail_sender` in `invoicer.yaml` — matching the existing
+  auto-save behavior for the default org. No more configuring the same
+  value in two places.
+
 ## [0.5.1] - 2026-04-12
 
 ### Added
