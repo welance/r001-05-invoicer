@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-04-12
+
+### Changed
+
+- **`invoicer defaults` now shows all configuration at a glance.** Two
+  tables: the `invoicer.yaml defaults:` block (org, locale, gmail_sender)
+  and all `.env` keys invoicer uses — including per-org Qonto credentials
+  discovered dynamically from `orgs:`. Secrets are masked as `[*******]`,
+  missing keys show `[not-set]`. One command to see exactly what's
+  configured and what's missing.
+
 ## [0.5.2] - 2026-04-12
 
 ### Changed
