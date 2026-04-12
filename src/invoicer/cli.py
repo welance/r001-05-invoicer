@@ -181,29 +181,40 @@ def _defaults_root(ctx: typer.Context) -> None:
     from .config import get_project_root
 
     yaml_path = get_project_root() / "invoicer.yaml"
+    load_env()
     current = defaults_mod.read_all()
-    if not current:
-        if not yaml_path.exists():
-            typer.echo(
-                f"No invoicer.yaml in {yaml_path.parent} — nothing to show.\n"
-                f"Run `invoicer init` to create one, or cd into a directory "
-                f"that already has an invoicer.yaml."
-            )
-        else:
-            typer.echo(
-                "No defaults set. Run `invoicer defaults set` to add some."
-            )
-        return
+
+    # Build effective values: defaults: block + .env fallbacks.
+    _ENV_FALLBACKS = {
+        "gmail_sender": "GMAIL_SENDER",
+    }
 
     from rich.console import Console
     from rich.table import Table
 
+    if not current and not yaml_path.exists():
+        typer.echo(
+            f"No invoicer.yaml in {yaml_path.parent} — nothing to show.\n"
+            f"Run `invoicer init` to create one, or cd into a directory "
+            f"that already has an invoicer.yaml."
+        )
+        return
+
     table = Table(title="invoicer defaults", title_style="bold green")
     table.add_column("Key", style="cyan")
     table.add_column("Value")
+    table.add_column("Source", style="dim")
     for k in defaults_mod.KNOWN_KEYS:
         val = current.get(k)
-        table.add_row(k, str(val) if val else "[dim](unset)[/dim]")
+        if val:
+            table.add_row(k, str(val), "defaults:")
+        else:
+            env_key = _ENV_FALLBACKS.get(k)
+            env_val = os.environ.get(env_key) if env_key else None
+            if env_val:
+                table.add_row(k, str(env_val), f".env ({env_key})")
+            else:
+                table.add_row(k, "[dim](unset)[/dim]", "")
     Console().print(table)
     typer.echo(
         "\nStored in invoicer.yaml under `defaults:`. "
