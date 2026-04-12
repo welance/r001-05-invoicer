@@ -7,7 +7,10 @@ import pytest
 
 from invoicer.project_config import (
     _normalize,
+    _render_project_entry,
     activate_org,
+    append_client_mapping,
+    append_project_entry,
     find_projects,
     get_defaults,
     get_org,
@@ -264,3 +267,142 @@ class TestGetDefaults:
         which must work before `invoicer init` has run."""
         monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
         assert list_orgs() == []
+
+
+class TestAppendClientMapping:
+    def _write_yaml(self, tmp_path, content):
+        p = tmp_path / "invoicer.yaml"
+        p.write_text(content)
+        return p
+
+    def test_creates_clients_block_when_missing(self, tmp_path, monkeypatch):
+        self._write_yaml(tmp_path, "projects:\n  \"pid\": {}\n")
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_client_mapping({"clockify_id": "c1", "qonto_id": "q1"})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert "clients:" in text
+        assert 'clockify_id: "c1"' in text
+        assert 'qonto_id: "q1"' in text
+
+    def test_appends_to_existing_clients_block(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'clients:\n  - clockify_id: "existing"\n    qonto_id: "q_old"\n\nprojects: {}\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_client_mapping({"clockify_id": "c2", "qonto_id": "q2"})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert 'clockify_id: "existing"' in text
+        assert 'clockify_id: "c2"' in text
+        assert "projects:" in text
+
+    def test_idempotent_on_duplicate(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'clients:\n  - clockify_id: "c1"\n    qonto_id: "q1"\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_client_mapping({"clockify_id": "c1", "qonto_id": "q1"})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert text.count("c1") == 1
+
+    def test_org_scoped_not_duplicate_of_orgless(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'clients:\n  - clockify_id: "c1"\n    qonto_id: "q1"\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_client_mapping({"clockify_id": "c1", "qonto_id": "q2", "org": "srl"})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert text.count("c1") == 2
+
+    def test_raises_when_yaml_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        with pytest.raises(FileNotFoundError):
+            append_client_mapping({"clockify_id": "c1", "qonto_id": "q1"})
+
+
+class TestRenderProjectEntry:
+    def test_basic_render(self):
+        text = _render_project_entry("pid123", {
+            "alias": "r001-03",
+            "name": "r001-03 - ommi.shop",
+            "rate_eur_per_hour": 85,
+            "vat_rate": 0,
+            "vat_exemption_reason": "N3.2",
+            "payment_terms_days": 30,
+            "rounding_minutes": 15,
+        })
+        assert '"pid123":' in text
+        assert 'alias: "r001-03"' in text
+        assert "rate_eur_per_hour: 85" in text
+        assert "vat_rate: 0" in text
+        assert 'vat_exemption_reason: "N3.2"' in text
+
+    def test_skips_none_and_empty_values(self):
+        text = _render_project_entry("pid", {
+            "alias": "r",
+            "name": "r",
+            "rate_eur_per_hour": 100,
+            "vat_exemption_reason": None,
+            "description_template": "",
+        })
+        assert "vat_exemption_reason" not in text
+        assert "description_template" not in text
+
+
+class TestAppendProjectEntry:
+    def _write_yaml(self, tmp_path, content):
+        p = tmp_path / "invoicer.yaml"
+        p.write_text(content)
+        return p
+
+    def test_creates_projects_block_when_missing(self, tmp_path, monkeypatch):
+        self._write_yaml(tmp_path, "clients: []\n")
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_project_entry("pid_new", {"alias": "r", "name": "R", "rate_eur_per_hour": 85})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert "projects:" in text
+        assert '"pid_new":' in text
+        assert "clients:" in text
+
+    def test_appends_to_existing_projects_block(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'projects:\n  "pid_old":\n    alias: "old"\n    rate_eur_per_hour: 50\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_project_entry("pid_new", {"alias": "new", "name": "New", "rate_eur_per_hour": 85})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert '"pid_old":' in text
+        assert '"pid_new":' in text
+
+    def test_replaces_existing_entry(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'projects:\n  "pid":\n    alias: "old"\n    rate_eur_per_hour: 50\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_project_entry("pid", {"alias": "updated", "name": "U", "rate_eur_per_hour": 100})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert text.count('"pid":') == 1
+        assert 'alias: "updated"' in text
+        assert "rate_eur_per_hour: 100" in text
+        assert "rate_eur_per_hour: 50" not in text
+
+    def test_preserves_other_entries(self, tmp_path, monkeypatch):
+        self._write_yaml(
+            tmp_path,
+            'projects:\n  "pid_a":\n    alias: "a"\n    rate_eur_per_hour: 50\n  "pid_b":\n    alias: "b"\n    rate_eur_per_hour: 60\n',
+        )
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        append_project_entry("pid_c", {"alias": "c", "name": "C", "rate_eur_per_hour": 70})
+        text = (tmp_path / "invoicer.yaml").read_text()
+        assert '"pid_a":' in text
+        assert '"pid_b":' in text
+        assert '"pid_c":' in text
+
+    def test_raises_when_yaml_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("INVOICER_DIR", str(tmp_path))
+        with pytest.raises(FileNotFoundError):
+            append_project_entry("pid", {"alias": "x"})

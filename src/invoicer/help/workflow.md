@@ -23,6 +23,7 @@ invoicer draft allsafe --month 2026-04 --purchase-order "Attn: Nick"
 ```
 
 - The project argument is **fuzzy matched** against the `alias` or `name` field in `invoicer.yaml`. `allsafe`, `all-safe`, `r005-01`, and the raw Clockify project ID all resolve to the same project.
+- **New project?** If the ID isn't in `invoicer.yaml`, `draft` auto-onboards it via a guided wizard: resolves the Qonto client by name match (or lets you pick from a ranked list), validates the client record is complete for invoicing, synthesizes project settings (rate from Clockify, VAT from country pair), shows a review panel, and writes everything to `invoicer.yaml`. Zero hand-editing — just confirm the defaults.
 - `--month` takes `YYYY-MM`.
 - `--purchase-order` is optional; prints as a reference on the invoice PDF.
 

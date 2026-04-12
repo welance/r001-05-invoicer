@@ -371,3 +371,162 @@ def write_secrets_credentials_json_block(
             lines[start:end] = []
 
     path.write_text("".join(lines))
+
+
+# -------- clients: block surgery ------------------------------------------
+
+def _find_clients_block(lines: list[str]) -> tuple[int, int] | None:
+    """Return (start, end) half-open range of the top-level `clients:` block."""
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n")
+        if stripped == "clients:" or stripped.startswith("clients:"):
+            if line.startswith(" ") or line.startswith("\t"):
+                continue
+            end = i + 1
+            for j in range(i + 1, len(lines)):
+                peek = lines[j]
+                if peek.strip() == "":
+                    end = j + 1
+                    continue
+                if peek.startswith(" ") or peek.startswith("\t") or peek.lstrip().startswith("-"):
+                    end = j + 1
+                    continue
+                break
+            return (i, end)
+    return None
+
+
+def append_client_mapping(mapping: dict) -> None:
+    """Append one entry to the `clients:` block in invoicer.yaml.
+
+    Idempotent: no-op if (clockify_id, org) already exists. Creates the
+    `clients:` block if missing. `mapping` keys: clockify_id, qonto_id,
+    and optionally org.
+
+    Raises FileNotFoundError if invoicer.yaml doesn't exist.
+    """
+    path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `invoicer init` first."
+        )
+
+    data = load_yaml()
+    existing = data.get("clients") or []
+    for m in existing:
+        if (
+            m.get("clockify_id") == mapping["clockify_id"]
+            and m.get("org", "") == mapping.get("org", "")
+        ):
+            return
+
+    entry_lines = [f'  - clockify_id: "{mapping["clockify_id"]}"']
+    entry_lines.append(f'    qonto_id: "{mapping["qonto_id"]}"')
+    if mapping.get("org"):
+        entry_lines.append(f'    org: "{mapping["org"]}"')
+    entry_text = "\n".join(entry_lines) + "\n"
+
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+    found = _find_clients_block(lines)
+
+    if found is None:
+        lines.append("\nclients:\n")
+        lines.append(entry_text)
+    else:
+        _start, end = found
+        lines.insert(end, entry_text)
+
+    path.write_text("".join(lines))
+
+
+# -------- projects: block surgery -----------------------------------------
+
+def _find_projects_block(lines: list[str]) -> tuple[int, int] | None:
+    """Return (start, end) half-open range of the top-level `projects:` block."""
+    for i, line in enumerate(lines):
+        stripped = line.rstrip("\n")
+        if stripped == "projects:" or stripped.startswith("projects:"):
+            if line.startswith(" ") or line.startswith("\t"):
+                continue
+            end = i + 1
+            for j in range(i + 1, len(lines)):
+                peek = lines[j]
+                if peek.strip() == "":
+                    end = j + 1
+                    continue
+                if peek.startswith(" ") or peek.startswith("\t"):
+                    end = j + 1
+                    continue
+                break
+            return (i, end)
+    return None
+
+
+def _render_project_entry(project_id: str, entry: dict) -> str:
+    """Render a single project entry as YAML text indented under `projects:`."""
+    out = [f'  "{project_id}":']
+    key_order = [
+        "alias", "name", "rate_eur_per_hour", "vat_rate",
+        "vat_exemption_reason", "description_template",
+        "payment_terms_days", "rounding_minutes",
+    ]
+    for k in key_order:
+        v = entry.get(k)
+        if v is None or v == "":
+            continue
+        if isinstance(v, str):
+            out.append(f'    {k}: "{v}"')
+        else:
+            out.append(f"    {k}: {v}")
+    return "\n".join(out) + "\n"
+
+
+def append_project_entry(project_id: str, entry: dict) -> None:
+    """Insert or replace a project entry in the `projects:` block.
+
+    Creates the block if missing. Replaces the entry if project_id already
+    exists. Preserves comments and the rest of the file.
+
+    Raises FileNotFoundError if invoicer.yaml doesn't exist.
+    """
+    path = get_project_root() / "invoicer.yaml"
+    if not path.exists():
+        raise FileNotFoundError(
+            f"{path} not found. Run `invoicer init` first."
+        )
+
+    entry_text = _render_project_entry(project_id, entry)
+
+    text = path.read_text()
+    lines = text.splitlines(keepends=True)
+    found = _find_projects_block(lines)
+
+    if found is None:
+        lines.append("\nprojects:\n")
+        lines.append(entry_text)
+    else:
+        _start, end = found
+        pid_marker = f'"{project_id}":'
+        replaced = False
+        i = _start + 1
+        while i < end:
+            if pid_marker in lines[i]:
+                entry_end = i + 1
+                for j in range(i + 1, end):
+                    peek = lines[j].rstrip("\n")
+                    if peek.strip() == "":
+                        entry_end = j + 1
+                        continue
+                    indent = len(peek) - len(peek.lstrip())
+                    if indent <= 2 and peek.strip():
+                        break
+                    entry_end = j + 1
+                lines[i:entry_end] = [entry_text]
+                replaced = True
+                break
+            i += 1
+        if not replaced:
+            lines.insert(end, entry_text)
+
+    path.write_text("".join(lines))
