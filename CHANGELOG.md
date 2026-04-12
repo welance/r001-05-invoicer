@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-12
+
+### Added
+
+- **Draft wizard: "Create new client" option in picker.** When the Qonto
+  client for a Clockify project doesn't exist yet, the picker now offers
+  "Create new client (AI)" and "Create new client (manual)" alongside the
+  ranked match list. Drops into the same field-prompt + summary flow as
+  `invoicer client add`, then continues with the draft. No more aborting
+  and running a separate command.
+
+### Fixed
+
+- **`invoicer defaults` now shows all known keys**, including unset ones
+  (displayed as "(unset)"). Previously, keys without a value were silently
+  omitted from the table.
+
 ## [0.5.0] - 2026-04-12
 
 ### Added
