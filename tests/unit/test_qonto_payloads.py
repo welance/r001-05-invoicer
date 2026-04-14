@@ -266,6 +266,59 @@ class TestBuildInvoicePayload:
         )
         assert payload["status"] == "draft"
 
+    def test_header_and_notes_included_when_passed(self):
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[self._minimal_item()],
+            iban="IT60X0542811101000000123456",
+            header="Invoice for April 2026",
+            terms_and_conditions="N3.2 — reverse charge applies",
+        )
+        assert payload["header"] == "Invoice for April 2026"
+        assert payload["terms_and_conditions"] == "N3.2 — reverse charge applies"
+
+    def test_header_and_notes_omitted_when_none(self):
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[self._minimal_item()],
+            iban="IT60X0542811101000000123456",
+        )
+        assert "header" not in payload
+        assert "terms_and_conditions" not in payload
+
+    def test_header_and_notes_omitted_when_empty_or_whitespace(self):
+        """Empty strings (from unused CLI flags / skipped prompts) must
+        not land in the payload — Qonto may validate non-empty if the key
+        is present at all."""
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[self._minimal_item()],
+            iban="IT60X0542811101000000123456",
+            header="",
+            terms_and_conditions="   ",
+        )
+        assert "header" not in payload
+        assert "terms_and_conditions" not in payload
+
+    def test_header_and_notes_trimmed(self):
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[self._minimal_item()],
+            iban="IT60X0542811101000000123456",
+            header="  top  ",
+            terms_and_conditions="  bottom  ",
+        )
+        assert payload["header"] == "top"
+        assert payload["terms_and_conditions"] == "bottom"
+
 
 class TestBuildInvoicePayloadRegressions:
     """Regression tests for bugs we actually hit during development."""

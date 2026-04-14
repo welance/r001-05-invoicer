@@ -696,6 +696,19 @@ def draft(
     project: str = typer.Argument(..., help="Project alias from invoicer.yaml, or raw Clockify project id"),
     month: str = typer.Option(..., help="Billing month, YYYY-MM"),
     purchase_order: str = typer.Option(None, help="Optional PO / reference printed on the invoice"),
+    header: str = typer.Option(
+        None,
+        "--header",
+        help="Free text shown above the line items (Qonto UI: 'Header'). "
+        "Prompted if not provided. Pass empty string to skip the prompt.",
+    ),
+    notes: str = typer.Option(
+        None,
+        "--notes",
+        help="Free text shown below the totals (Qonto UI: 'Additional notes'). "
+        "Prompted if not provided, with the SDI N-code gloss pre-filled when applicable. "
+        "Pass empty string to skip the prompt.",
+    ),
     org: str = typer.Option(
         None,
         "--org",
@@ -892,6 +905,35 @@ def draft(
         if org_country == "IT"
         else None
     )
+
+    # Header + Additional notes prompts (Qonto UI names). When not
+    # provided via CLI flags, prompt interactively with sensible defaults:
+    # header stays empty by default, notes pre-fills the SDI N-code gloss
+    # so the user just hits Enter to accept the legally-correct German /
+    # Italian / English explanation of the exemption code.
+    from .sdi_glosses import get_gloss as _get_sdi_gloss
+
+    # Pre-fill notes default with the SDI gloss when the invoice has an
+    # exemption code. Client country is the Qonto client's country, not
+    # the org's.
+    _client_country = (
+        (qc.get("billing_address") or {}).get("country_code")
+        or qc.get("country_code")
+        or ""
+    ).upper() or None
+    _gloss_default = _get_sdi_gloss(vat_exemption_reason, _client_country) or ""
+
+    if header is None:
+        header = questionary.text(
+            "Header (shown above line items, optional):",
+            default="",
+        ).ask() or ""
+    if notes is None:
+        notes = questionary.text(
+            "Additional notes (shown below totals, optional):",
+            default=_gloss_default,
+        ).ask() or ""
+
     payload = qonto.build_invoice_payload(
         client_id=qonto_client_id,
         issue_date=issue_date,
@@ -903,6 +945,8 @@ def draft(
         purchase_order=purchase_order,
         status="draft",
         payment_reporting=payment_reporting,
+        header=header,
+        terms_and_conditions=notes,
     )
 
     # Pre-mutation summary
@@ -926,6 +970,8 @@ def draft(
         purchase_order=purchase_order,
         endpoint="POST https://thirdparty.qonto.com/v2/client_invoices",
         line_entries=agg["entries"],
+        header=header,
+        notes=notes,
     )
 
     if not questionary.confirm("Create this DRAFT invoice in Qonto?", default=False).ask():

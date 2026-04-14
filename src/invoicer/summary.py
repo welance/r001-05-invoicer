@@ -142,6 +142,8 @@ def print_invoice_summary(
     purchase_order: str | None,
     endpoint: str,
     line_entries: list[dict] | None = None,
+    header: str | None = None,
+    notes: str | None = None,
 ) -> None:
     """Summary for POST /v2/client_invoices.
 
@@ -172,6 +174,10 @@ def print_invoice_summary(
             )
         _console.print(lt)
 
+    def _clip(s: str, n: int = 120) -> str:
+        s = s.replace("\n", " ↵ ")
+        return s if len(s) <= n else s[: n - 1] + "…"
+
     rows = [
         ("Client", f"{client_name}  [dim]({client_id})[/dim]"),
         ("Project", project_name),
@@ -190,6 +196,8 @@ def print_invoice_summary(
         ("Issue date", issue_date),
         ("Due date", due_date),
         ("Purchase order", purchase_order or ""),
+        ("Header", _clip(header) if header else ""),
+        ("Notes", _clip(notes) if notes else ""),
         ("Status", f"[bold]{status.upper()}[/bold]"),
     ]
     reversible = (
