@@ -774,9 +774,13 @@ def draft(
             raise typer.Exit(1)
         proj_cfg = project_config.get_project(project_id)
     else:
-        # No match in invoicer.yaml — treat `project` as a raw Clockify id
-        # and try to onboard it via the wizard.
-        project_id = project
+        # No match in invoicer.yaml. If the argument looks like a raw
+        # Clockify project id (24-char hex), use it directly. Otherwise
+        # fall back to a Clockify-side search by name and let the user
+        # pick — registered-or-not, they shouldn't have to know the UUID.
+        from . import draft_setup as _draft_setup
+
+        project_id = _draft_setup.resolve_clockify_project_id(project)
         proj_cfg = None
 
     # Resolve and activate Qonto org BEFORE any Qonto API call.

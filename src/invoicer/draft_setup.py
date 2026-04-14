@@ -170,6 +170,96 @@ def _rank_qonto_clients(
     return [c for _, c in scored]
 
 
+_CLOCKIFY_ID_RE = re.compile(r"^[a-f0-9]{24}$")
+
+
+def looks_like_clockify_id(s: str) -> bool:
+    """Return True if `s` matches the 24-char hex shape of a Clockify project id."""
+    return bool(_CLOCKIFY_ID_RE.match((s or "").strip().lower()))
+
+
+def resolve_clockify_project_id(query: str) -> str:
+    """Resolve a user-typed project argument to a Clockify project id.
+
+    Lookup order:
+      1. If it already looks like a Clockify id (24-char hex), return as-is.
+      2. Fetch Clockify projects, exact-normalized name match → auto-confirm.
+      3. Substring / fuzzy match → questionary picker.
+
+    Used by `cli.draft` when the user passes an alias / name that isn't
+    registered in invoicer.yaml. Raises typer.Exit on no-match / abort.
+    """
+    from . import clockify
+
+    q = (query or "").strip()
+    if looks_like_clockify_id(q):
+        return q
+
+    typer.echo(
+        f"'{q}' isn't registered in invoicer.yaml. Searching Clockify...",
+        err=True,
+    )
+    projects = clockify.list_projects()
+    if not projects:
+        typer.echo("No projects returned from Clockify.", err=True)
+        raise typer.Exit(1)
+
+    def _norm(s: str) -> str:
+        return re.sub(r"[^a-z0-9]", "", (s or "").lower())
+
+    qn = _norm(q)
+
+    # Exact normalized match against name.
+    exact = [p for p in projects if _norm(p.get("name", "")) == qn]
+
+    # Normalized alias-prefix match (e.g. "r005-01" inside "r005-01 - All-Safe …").
+    prefix = [
+        p for p in projects
+        if qn and _norm(p.get("name", "")).startswith(qn)
+    ]
+
+    # Substring match as a wider net.
+    substring = [
+        p for p in projects
+        if qn and qn in _norm(p.get("name", ""))
+    ]
+
+    if len(exact) == 1:
+        p = exact[0]
+        typer.echo(
+            f"→ Exact match: {p.get('name')}  ({p['id']})",
+            err=True,
+        )
+        return p["id"]
+
+    candidates = exact or prefix or substring
+    if not candidates:
+        typer.echo(
+            f"No Clockify project matches {q!r}. Run `invoicer discover` "
+            f"to see the list.",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    choices = [
+        questionary.Choice(
+            title=f"{p.get('name', '?')}  ({p['id'][:12]}…)",
+            value=p["id"],
+        )
+        for p in candidates[:15]
+    ]
+    choices.append(questionary.Choice(title="Abort", value="__abort__"))
+
+    picked = questionary.select(
+        f"{len(candidates)} Clockify projects match {q!r}. Pick one:",
+        choices=choices,
+    ).ask()
+    if not picked or picked == "__abort__":
+        typer.echo("Aborted.", err=True)
+        raise typer.Exit(1)
+    return picked
+
+
 def _create_client_inline(*, use_ai: bool, locale: str) -> dict:
     """Run the client creation flow inline and return the created client dict.
 
