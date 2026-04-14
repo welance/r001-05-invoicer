@@ -170,6 +170,8 @@ def build_invoice_payload(
     purchase_order: str | None = None,
     status: str = "draft",
     payment_reporting: dict | None = None,
+    header: str | None = None,
+    terms_and_conditions: str | None = None,
 ) -> dict:
     """Build the POST /v2/client_invoices request body with pre-built items.
 
@@ -178,6 +180,11 @@ def build_invoice_payload(
     (or similar SDI codes); for non-IT orgs the caller passes `None` and the
     field is omitted entirely. Never set defaults here: the caller knows the
     org country, this builder doesn't.
+
+    `header` and `terms_and_conditions` map to the Qonto UI fields "Header"
+    and "Additional notes" — free-text rendered on the invoice PDF above
+    the line items and below the totals respectively. Both are optional
+    and omitted from the payload when empty.
     """
     transfer: dict = {"type": "transfer", "iban": iban}
     if bic:
@@ -197,6 +204,10 @@ def build_invoice_payload(
         payload["payment_reporting"] = payment_reporting
     if purchase_order:
         payload["purchase_order"] = purchase_order
+    if header and header.strip():
+        payload["header"] = header.strip()
+    if terms_and_conditions and terms_and_conditions.strip():
+        payload["terms_and_conditions"] = terms_and_conditions.strip()
     return payload
 
 

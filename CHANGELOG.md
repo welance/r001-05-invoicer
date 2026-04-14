@@ -7,6 +7,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-14
+
+### Added
+
+- **`invoicer draft` now collects Header and Additional notes** that land
+  directly on the invoice PDF in Qonto. Matches the Qonto UI terminology
+  1:1 — two optional prompts ("Header (shown above line items)" and
+  "Additional notes (shown below totals)") before the pre-mutation panel,
+  both with sensible defaults.
+
+- **SDI N-code gloss is pre-filled as the Additional notes default.**
+  When the invoice carries an exemption code (N3.2, N3.1, N6.7) and the
+  Qonto client's country is known, the "Additional notes" prompt is
+  pre-populated with the localized gloss from `sdi_glosses.py`. For an
+  intra-EU invoice to a German client, the user just presses Enter and
+  the invoice PDF carries the German N3.2 explanation *on the document
+  itself* — not just in the email. Solves the cancelled-invoice-F-2026-02
+  problem at the source.
+
+- **`--header` and `--notes` CLI flags** on `invoicer draft` for scripted
+  runs that need to skip the interactive prompts. Passing an empty string
+  suppresses the prompt entirely.
+
+- **Pre-mutation summary panel shows Header and Notes rows** (truncated
+  to 120 chars with newlines replaced for compact display). The user can
+  still catch mistakes before the POST.
+
+### Changed
+
+- `qonto.build_invoice_payload` gained `header` and `terms_and_conditions`
+  keyword arguments. Both are optional; empty / whitespace-only values are
+  omitted from the payload so Qonto never sees an empty key.
+
+- `summary.print_invoice_summary` gained `header` and `notes` keyword
+  arguments, added as rows in the pre-mutation panel.
+
+- **`mail-draft`'s SDI gloss remains in place as a safety net** — the
+  gloss now appears in both the email body (v0.5.4) and on the invoice
+  PDF itself (v0.6.0). Redundancy is fine; the customer sees it wherever
+  they're reading.
+
+### Why this is a minor bump
+
+New behavior on `invoicer draft` (extra prompts) counts as a minor-version
+change under the pre-1.0 convention in CLAUDE.md. Non-interactive callers
+can pass `--header ""` and `--notes ""` to keep the old behavior, so it's
+not a breaking change.
+
 ## [0.5.4] - 2026-04-14
 
 ### Added
