@@ -267,6 +267,10 @@ class TestBuildInvoicePayload:
         assert payload["status"] == "draft"
 
     def test_header_and_notes_included_when_passed(self):
+        """'Additional notes' from the Qonto UI maps to the API `footer`
+        field, NOT `terms_and_conditions`. `terms_and_conditions` is
+        Qonto's dedicated legal-text block rendered in a separate section.
+        """
         payload = build_invoice_payload(
             client_id="c",
             issue_date="2026-04-01",
@@ -274,10 +278,11 @@ class TestBuildInvoicePayload:
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
             header="Invoice for April 2026",
-            terms_and_conditions="N3.2 — reverse charge applies",
+            footer="N3.2 — reverse charge applies",
         )
         assert payload["header"] == "Invoice for April 2026"
-        assert payload["terms_and_conditions"] == "N3.2 — reverse charge applies"
+        assert payload["footer"] == "N3.2 — reverse charge applies"
+        assert "terms_and_conditions" not in payload
 
     def test_header_and_notes_omitted_when_none(self):
         payload = build_invoice_payload(
@@ -288,7 +293,7 @@ class TestBuildInvoicePayload:
             iban="IT60X0542811101000000123456",
         )
         assert "header" not in payload
-        assert "terms_and_conditions" not in payload
+        assert "footer" not in payload
 
     def test_header_and_notes_omitted_when_empty_or_whitespace(self):
         """Empty strings (from unused CLI flags / skipped prompts) must
@@ -301,10 +306,10 @@ class TestBuildInvoicePayload:
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
             header="",
-            terms_and_conditions="   ",
+            footer="   ",
         )
         assert "header" not in payload
-        assert "terms_and_conditions" not in payload
+        assert "footer" not in payload
 
     def test_header_and_notes_trimmed(self):
         payload = build_invoice_payload(
@@ -314,10 +319,10 @@ class TestBuildInvoicePayload:
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
             header="  top  ",
-            terms_and_conditions="  bottom  ",
+            footer="  bottom  ",
         )
         assert payload["header"] == "top"
-        assert payload["terms_and_conditions"] == "bottom"
+        assert payload["footer"] == "bottom"
 
 
 class TestBuildInvoicePayloadRegressions:

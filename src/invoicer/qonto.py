@@ -171,7 +171,7 @@ def build_invoice_payload(
     status: str = "draft",
     payment_reporting: dict | None = None,
     header: str | None = None,
-    terms_and_conditions: str | None = None,
+    footer: str | None = None,
 ) -> dict:
     """Build the POST /v2/client_invoices request body with pre-built items.
 
@@ -181,10 +181,13 @@ def build_invoice_payload(
     field is omitted entirely. Never set defaults here: the caller knows the
     org country, this builder doesn't.
 
-    `header` and `terms_and_conditions` map to the Qonto UI fields "Header"
-    and "Additional notes" — free-text rendered on the invoice PDF above
-    the line items and below the totals respectively. Both are optional
-    and omitted from the payload when empty.
+    `header` and `footer` map to the Qonto UI fields "Header" and
+    "Additional notes" — free-text rendered on the invoice PDF above the
+    line items and below the totals respectively. Both are optional and
+    omitted from the payload when empty. Note that `footer` is the Qonto
+    API name for the "Additional notes" field; `terms_and_conditions` is a
+    separate API field Qonto uses for its dedicated legal-text block, which
+    is NOT what the UI labels "Additional notes".
     """
     transfer: dict = {"type": "transfer", "iban": iban}
     if bic:
@@ -206,8 +209,8 @@ def build_invoice_payload(
         payload["purchase_order"] = purchase_order
     if header and header.strip():
         payload["header"] = header.strip()
-    if terms_and_conditions and terms_and_conditions.strip():
-        payload["terms_and_conditions"] = terms_and_conditions.strip()
+    if footer and footer.strip():
+        payload["footer"] = footer.strip()
     return payload
 
 
