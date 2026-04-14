@@ -1076,6 +1076,17 @@ def mail_draft(
         else "VAT is included as shown on the attached invoice.\n"
     )
 
+    # SDI N-code gloss: if the invoice carries an exemption code (N3.2,
+    # N3.1, N6.7, …), append a short paragraph in the client's language
+    # explaining what the code means. Opaque three-char codes are legally
+    # binding but read as gibberish to the customer's accountant.
+    from .sdi_glosses import extract_client_country, extract_sdi_code, get_gloss
+
+    sdi_code = extract_sdi_code(inv)
+    sdi_country = extract_client_country(inv)
+    sdi_gloss = get_gloss(sdi_code, sdi_country)
+    sdi_block = f"\n{sdi_gloss}\n" if sdi_gloss else ""
+
     body = (
         f"Hello,\n\n"
         f"Please find attached our invoice {number} for consulting services.\n\n"
@@ -1084,6 +1095,7 @@ def mail_draft(
         f"- Amount:     €{total}\n"
         f"- Payment:    bank transfer (IBAN on the invoice)\n\n"
         f"{vat_line}"
+        f"{sdi_block}"
         f"\n"
         f"Please let us know if you have any questions.\n\n"
         f"Best regards,\n"
