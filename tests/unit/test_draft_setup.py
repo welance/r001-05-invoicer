@@ -6,6 +6,7 @@ No I/O, no mocks — just the pure functions that the wizard calls internally.
 from invoicer.draft_setup import (
     check_client_completeness,
     derive_alias_from_name,
+    looks_like_clockify_id,
     synthesize_project_entry,
     vat_defaults_for_country_pair,
 )
@@ -134,6 +135,36 @@ class TestCheckClientCompleteness:
         c = self._base_client(name="")
         missing = check_client_completeness(c, None)
         assert "name" in missing
+
+
+class TestLooksLikeClockifyId:
+    def test_real_clockify_ids(self):
+        assert looks_like_clockify_id("69b195c52916ebf43251c648")
+        assert looks_like_clockify_id("68d429bf97cd1377182aed4d")
+
+    def test_uppercase_hex_not_matched_lowercases(self):
+        # Clockify ids are always lowercase in practice; we lowercase before matching.
+        assert looks_like_clockify_id("69B195C52916EBF43251C648")
+
+    def test_whitespace_trimmed(self):
+        assert looks_like_clockify_id("  69b195c52916ebf43251c648  ")
+
+    def test_aliases_not_matched(self):
+        assert not looks_like_clockify_id("r005-01")
+        assert not looks_like_clockify_id("allsafe")
+        assert not looks_like_clockify_id("r001-03")
+
+    def test_wrong_length_not_matched(self):
+        assert not looks_like_clockify_id("69b195c5")
+        assert not looks_like_clockify_id("69b195c52916ebf43251c6481")
+
+    def test_non_hex_chars_not_matched(self):
+        assert not looks_like_clockify_id("69b195c52916ebf43251c64g")
+        assert not looks_like_clockify_id("xxxxxxxxxxxxxxxxxxxxxxxx")
+
+    def test_empty_and_none(self):
+        assert not looks_like_clockify_id("")
+        assert not looks_like_clockify_id(None)
 
 
 class TestSynthesizeProjectEntry:

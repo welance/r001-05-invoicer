@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-04-14
+
+### Fixed
+
+- **`invoicer draft <alias>` no longer 400s when the alias isn't registered
+  in `invoicer.yaml`.** Previously the auto-onboarding path assumed any
+  unregistered argument was a raw Clockify project id and sent it straight
+  to the Clockify API, which 400-rejected anything that wasn't 24-char hex.
+  Now it detects non-UUID input, fetches the Clockify project list, and
+  walks a name-match picker (exact → prefix → substring) so the user can
+  pick the right project without needing to know the UUID. Registered
+  projects are unaffected — this only runs when `find_projects()` returns
+  no match.
+
+  `draft_setup.resolve_clockify_project_id` is the new entry point.
+  `looks_like_clockify_id` is a pure-function helper exposed for testing.
+
 ## [0.6.0] - 2026-04-14
 
 ### Added
