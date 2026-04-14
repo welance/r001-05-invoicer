@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-04-14
+
+### Added
+
+- **`mail-draft` now appends a localized SDI-code explanation** to the
+  email body when the invoice carries an N-code (N3.2, N3.1, N6.7, …).
+  The opaque three-character code on the invoice PDF is legally binding
+  but reads as gibberish to the customer's accountant — the email body
+  now spells out what it means, in the customer's language.
+
+  Example: for a €0-VAT intra-EU invoice to a German customer, the body
+  now includes a paragraph reading *"Zur Erläuterung: Die Position „N3.2"
+  auf der Rechnung steht für Steuerfreie Umsätze – innergemeinschaftliche
+  Lieferungen (Art. 41 DL 331/93, italienisches Reverse-Charge-Verfahren).
+  Es entstehen für Sie keine zusätzlichen Steuerpflichten in Italien."*
+
+  Lookup is keyed by `(N-code, ISO-2 country code)`; the table lives in
+  `src/invoicer/sdi_glosses.py` and falls back to an English version for
+  any (code, country) pair that isn't explicitly localized. Domestic /
+  VAT-bearing invoices are unaffected — no gloss is appended when the
+  invoice has no exemption code.
+
+  Currently shipped localizations:
+  - `N3.2` × DE (German), IT (Italian), EN (fallback)
+  - `N3.1` × EN (fallback)
+  - `N6.7` × EN (fallback)
+
+- **25 new unit tests** for the gloss lookup + invoice field extraction.
+  283 total.
+
 ## [0.5.3] - 2026-04-12
 
 ### Changed
