@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-04-14
+
+### Fixed
+
+- **"Additional notes" now lands in the right place on the invoice PDF.**
+  0.6.0 mapped the Qonto UI "Additional notes" field to the API
+  `terms_and_conditions` key, but that's Qonto's dedicated legal-text
+  block — it renders as a separate section, not where the UI's
+  "Additional notes" text appears. The correct mapping is the API `footer`
+  key. Fixed at the `qonto.build_invoice_payload` level; the `draft` CLI
+  and prompts are unchanged.
+
 ## [0.6.1] - 2026-04-14
 
 ### Fixed

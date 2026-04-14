@@ -950,7 +950,7 @@ def draft(
         status="draft",
         payment_reporting=payment_reporting,
         header=header,
-        terms_and_conditions=notes,
+        footer=notes,
     )
 
     # Pre-mutation summary
