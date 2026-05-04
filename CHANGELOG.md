@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-05-04
+
+### Fixed
+
+- **`draft` no longer 422s with `"payment" must have a value`** for
+  Italian orgs running in legacy single-org mode. Qonto's spec lists
+  `payment_reporting` as optional, but the live `POST /v2/client_invoices`
+  endpoint rejects Italian-org requests that omit it — surfacing as a
+  misleading required-field error on the (undocumented) internal
+  `payment` attribute. The 0.4 gate only fired when the active org's
+  `country` field in `invoicer.yaml` was `IT`, which never set in
+  legacy single-org mode. The gate now also fires in legacy mode when
+  the project's `vat_exemption_reason` starts with an `N` (FatturaPA
+  codes are Italian-only — their presence implies the issuing org is
+  Italian).
+
+### Changed
+
+- `payment_methods` in the `POST /v2/client_invoices` payload now sends
+  only `iban` (the request-schema field), dropping `type`, `bic`, and
+  `beneficiary_name` which exist only in the *response* schema. The IBAN
+  is also now sourced from `GET /v2/bank_accounts` instead of the
+  `bank_accounts` array on `GET /v2/organization` — the invoice endpoint
+  validates the submitted IBAN against the bank-accounts service, and
+  the `/organization` value can be stale. New `qonto.list_bank_accounts()`
+  helper; `get_main_bank_account()` goes through it. Both changes are
+  schema cleanups, not the fix for the 422 above.
+
 ## [0.6.2] - 2026-04-14
 
 ### Fixed

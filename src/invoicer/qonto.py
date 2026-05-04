@@ -48,10 +48,42 @@ def get_organization() -> dict:
         return r.json().get("organization", {})
 
 
+def list_bank_accounts() -> list[dict]:
+    """GET /v2/bank_accounts — paginated list of the org's bank accounts.
+
+    This is the source of truth for IBANs that POST /v2/client_invoices
+    will accept under `payment_methods.iban`. Do not derive IBANs from
+    /v2/organization — the invoice endpoint validates the submitted IBAN
+    against the org's known accounts on the bank-accounts service, and a
+    stale or differently-formatted value there results in a 422 that
+    surfaces as `"payment" must have a value` (Qonto's internal name for
+    the resolved account).
+    """
+    out: list[dict] = []
+    page = 1
+    with _client() as c:
+        while True:
+            r = c.get("/bank_accounts", params={"per_page": 100, "page": page})
+            r.raise_for_status()
+            data = r.json()
+            batch = data.get("bank_accounts", [])
+            out.extend(batch)
+            meta = data.get("meta", {}) or {}
+            total_pages = meta.get("total_pages") or 1
+            if page >= total_pages or not batch:
+                break
+            page += 1
+    return out
+
+
 def get_main_bank_account() -> dict:
-    """Returns the primary (main=True) EUR bank account for the org."""
-    org = get_organization()
-    accounts = org.get("bank_accounts", [])
+    """Returns the primary (main=True) active bank account for the org.
+
+    Sources from /v2/bank_accounts (see `list_bank_accounts`), not
+    /v2/organization. The IBAN this returns is the one the
+    client_invoices POST will accept.
+    """
+    accounts = list_bank_accounts()
     for a in accounts:
         if a.get("main") and a.get("status") == "active":
             return a
@@ -164,8 +196,6 @@ def build_invoice_payload(
     due_date: str,
     items: list[dict],
     iban: str,
-    bic: str | None = None,
-    beneficiary_name: str | None = None,
     currency: str = "EUR",
     purchase_order: str | None = None,
     status: str = "draft",
@@ -188,12 +218,12 @@ def build_invoice_payload(
     API name for the "Additional notes" field; `terms_and_conditions` is a
     separate API field Qonto uses for its dedicated legal-text block, which
     is NOT what the UI labels "Additional notes".
+
+    `payment_methods` is a single object (not an array), and the request
+    schema only accepts `iban` inside it. `type`, `bic`, and
+    `beneficiary_name` appear in the *response* schema only — sending them
+    causes Qonto to 422 the request.
     """
-    transfer: dict = {"type": "transfer", "iban": iban}
-    if bic:
-        transfer["bic"] = bic
-    if beneficiary_name:
-        transfer["beneficiary_name"] = beneficiary_name
     payload: dict = {
         "client_id": client_id,
         "issue_date": issue_date,
@@ -201,7 +231,7 @@ def build_invoice_payload(
         "currency": currency,
         "status": status,
         "items": items,
-        "payment_methods": transfer,
+        "payment_methods": {"iban": iban},
     }
     if payment_reporting:
         payload["payment_reporting"] = payment_reporting

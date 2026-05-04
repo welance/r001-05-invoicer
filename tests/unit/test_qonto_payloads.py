@@ -175,8 +175,6 @@ class TestBuildInvoicePayload:
             due_date="2026-05-01",
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
-            bic="BANKIT22",
-            beneficiary_name="ACME SRL",
         )
         assert payload["client_id"] == "cli_xyz"
         assert payload["issue_date"] == "2026-04-01"
@@ -185,23 +183,21 @@ class TestBuildInvoicePayload:
         assert payload["status"] == "draft"
         assert len(payload["items"]) == 1
 
-    def test_payment_methods_is_single_object_not_array(self):
-        """Qonto's POST accepts a single object for payment_methods, not an array."""
+    def test_payment_methods_is_single_object_with_iban_only(self):
+        """Qonto's POST accepts a single `payment_methods` object whose only
+        request-schema field is `iban`. `type`, `bic`, and `beneficiary_name`
+        are response-only — sending them 422s the request.
+        """
         payload = build_invoice_payload(
             client_id="c",
             issue_date="2026-04-01",
             due_date="2026-05-01",
             items=[self._minimal_item()],
             iban="IT60X0542811101000000123456",
-            bic="BANKIT22",
-            beneficiary_name="ACME SRL",
         )
         pm = payload["payment_methods"]
         assert isinstance(pm, dict)
-        assert pm["type"] == "transfer"
-        assert pm["iban"] == "IT60X0542811101000000123456"
-        assert pm["bic"] == "BANKIT22"
-        assert pm["beneficiary_name"] == "ACME SRL"
+        assert pm == {"iban": "IT60X0542811101000000123456"}
 
     def test_payment_reporting_included_when_passed(self):
         """Italian orgs need SDI codes — the caller (not this builder) decides.
@@ -329,7 +325,11 @@ class TestBuildInvoicePayloadRegressions:
     """Regression tests for bugs we actually hit during development."""
 
     def test_payment_field_is_named_payment_methods_not_payment(self):
-        """We initially wrote 'payment' which Qonto rejected. Must be 'payment_methods'."""
+        """We initially wrote 'payment' which Qonto rejected. Must be
+        'payment_methods'. A later iteration tried renaming back to 'payment'
+        based on a misread 422 — the docs and live API both say
+        'payment_methods'.
+        """
         payload = build_invoice_payload(
             client_id="c",
             issue_date="2026-04-01",
@@ -347,7 +347,31 @@ class TestBuildInvoicePayloadRegressions:
             iban="IT60X0542811101000000123456",
         )
         assert "payment_methods" in payload
-        assert "payment" not in payload  # 'payment' was the wrong name
+        assert "payment" not in payload
+
+    def test_payment_methods_inner_keys_are_iban_only(self):
+        """Qonto's request schema for `payment_methods` only accepts `iban`.
+        Sending `type`, `bic`, or `beneficiary_name` causes a 422 — those
+        belong to the response schema only. Regression for an earlier 422
+        whose error pointer was misread as a wrapper-name issue.
+        """
+        payload = build_invoice_payload(
+            client_id="c",
+            issue_date="2026-04-01",
+            due_date="2026-05-01",
+            items=[
+                build_invoice_item(
+                    title="t",
+                    description="d",
+                    quantity=1,
+                    unit_price_eur=100,
+                    vat_rate_pct=0,
+                    vat_exemption_reason="N3.2",
+                )
+            ],
+            iban="IT60X0542811101000000123456",
+        )
+        assert set(payload["payment_methods"].keys()) == {"iban"}
 
     def test_zero_vat_item_must_have_exemption_reason(self):
         """Qonto 422s Italian orgs when a 0% VAT line has no exemption_reason."""
