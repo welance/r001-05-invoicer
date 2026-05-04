@@ -854,7 +854,6 @@ def draft(
 
     typer.echo("Fetching Qonto main bank account...", err=True)
     bank = qonto.get_main_bank_account()
-    qonto_org = qonto.get_organization()
 
     # Aggregate
     typer.echo(
@@ -900,14 +899,21 @@ def draft(
             )
         )
 
-    # SDI payment_reporting codes belong only on Italian invoices. If the
-    # active org is non-IT (or legacy-mode with no declared country), omit
-    # the field entirely — German/EU invoices must not carry Italian SDI
-    # metadata.
+    # SDI payment_reporting belongs on invoices issued from Italian orgs.
+    # Qonto's spec calls this optional, but the live API rejects Italian-org
+    # POSTs without it, surfacing as a misleading 422 `"payment" must have a
+    # value` at /data/attributes/payment. Detect Italian-org in two ways:
+    #   1. multi-org mode: the active org's `country` is IT
+    #   2. legacy single-org mode: project carries an N-prefix
+    #      vat_exemption_reason — those codes are FatturaPA-only, so their
+    #      presence implies the issuing org is Italian
+    is_italian_org = org_country == "IT" or (
+        org_id is None
+        and isinstance(vat_exemption_reason, str)
+        and vat_exemption_reason.startswith("N")
+    )
     payment_reporting = (
-        {"conditions": "TP02", "method": "MP05"}
-        if org_country == "IT"
-        else None
+        {"conditions": "TP02", "method": "MP05"} if is_italian_org else None
     )
 
     # Header + Additional notes prompts (Qonto UI names). When not
@@ -944,8 +950,6 @@ def draft(
         due_date=due_date,
         items=items,
         iban=bank["iban"],
-        bic=bank.get("bic"),
-        beneficiary_name=qonto_org.get("legal_name"),
         purchase_order=purchase_order,
         status="draft",
         payment_reporting=payment_reporting,
