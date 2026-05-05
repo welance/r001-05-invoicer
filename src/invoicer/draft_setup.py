@@ -148,7 +148,7 @@ def synthesize_project_entry(
         "vat_rate": vat["vat_rate"],
         "vat_exemption_reason": vat["vat_exemption_reason"],
         "description_template": "Consulting services — {month_name} {year}",
-        "payment_terms_days": 30,
+        "payment_terms_days": 14,
         "rounding_minutes": 15,
     }
 

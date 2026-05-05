@@ -842,7 +842,7 @@ def draft(
     vat_rate = float(proj_cfg.get("vat_rate", 0))
     vat_exemption_reason = proj_cfg.get("vat_exemption_reason")
     rounding = int(proj_cfg.get("rounding_minutes", 15))
-    payment_terms_days = int(proj_cfg.get("payment_terms_days", 30))
+    payment_terms_days = int(proj_cfg.get("payment_terms_days", 14))
     description_template = proj_cfg.get(
         "description_template", "Consulting services — {month_name} {year}"
     )
