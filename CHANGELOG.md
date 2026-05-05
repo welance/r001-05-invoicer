@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-05-05
+
+### Changed
+
+- **Default `payment_terms_days` is now 14** (previously 30), in both
+  the `draft` fallback in `cli.py` when a project entry omits the key
+  and the auto-registration synthesis in `draft_setup.py` for new
+  projects. Existing project entries in user `invoicer.yaml` files still
+  control their own value — only projects without an explicit
+  `payment_terms_days` pick up the new default.
+
 ## [0.6.3] - 2026-05-04
 
 ### Fixed

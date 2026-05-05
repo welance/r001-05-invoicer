@@ -178,7 +178,7 @@ class TestSynthesizeProjectEntry:
         assert entry["rate_eur_per_hour"] == 85
         assert entry["vat_rate"] == 0
         assert entry["vat_exemption_reason"] == "N3.2"
-        assert entry["payment_terms_days"] == 30
+        assert entry["payment_terms_days"] == 14
         assert entry["rounding_minutes"] == 15
 
     def test_no_hourly_rate(self):
