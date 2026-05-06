@@ -120,6 +120,7 @@ invoicer discover [--org X]                    # List Clockify + Qonto inventori
 invoicer client add [--org X] [--no-ai]        # Create a Qonto client — Haiku extraction by default, --no-ai for manual
 invoicer draft <project> --month YYYY-MM [--org X]   # Build a Qonto draft invoice — org auto-picked from project/defaults
 invoicer finalize <invoice_id> [--org X]       # Finalize a draft. IRREVERSIBLE. Typed confirmation.
+invoicer sdi-status <invoice_id> [--org X]     # Inspect a finalized invoice's SDI status + flag known rejection risk factors
 invoicer mail-draft <invoice_id> [--org X]     # Download PDF + CSV, create Gmail draft
 ```
 

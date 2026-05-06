@@ -54,6 +54,7 @@ jobs:
           .venv/bin/invoicer secrets fetch --help
           .venv/bin/invoicer draft --help
           .venv/bin/invoicer finalize --help
+          .venv/bin/invoicer sdi-status --help
           .venv/bin/invoicer mail-draft --help
           .venv/bin/invoicer help --help
           .venv/bin/invoicer help multi-org

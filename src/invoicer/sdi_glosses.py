@@ -19,11 +19,13 @@ from __future__ import annotations
 # used when the specific country isn't in the table.
 GLOSSES: dict[tuple[str, str], str] = {
     # N3.2 — intra-Community reverse charge (art. 41 DL 331/93)
+    # Each gloss MUST stay ≤200 chars: SDI's <Causale> field has a
+    # 200-char-per-occurrence cap and Qonto maps `footer` to a single
+    # Causale element. F-2026-05 was rejected with a 249-char footer.
     ("N3.2", "DE"): (
-        "Zur Erläuterung: Die Position „N3.2\" auf der Rechnung steht für "
-        "Steuerfreie Umsätze – innergemeinschaftliche Lieferungen "
-        "(Art. 41 DL 331/93, italienisches Reverse-Charge-Verfahren). "
-        "Es entstehen für Sie keine zusätzlichen Steuerpflichten in Italien."
+        "N3.2 — Steuerfreie innergemeinschaftliche Lieferung gemäß "
+        "Art. 41 DL 331/93 (italienisches Reverse-Charge-Verfahren). "
+        "MwSt. schuldet der Leistungsempfänger."
     ),
     ("N3.2", "IT"): (
         "Nota: il codice \"N3.2\" indica operazioni non imponibili – "
@@ -31,10 +33,9 @@ GLOSSES: dict[tuple[str, str], str] = {
         "L'IVA è dovuta nel paese del destinatario (inversione contabile)."
     ),
     ("N3.2", "EN"): (
-        "For reference: the \"N3.2\" code on the invoice indicates a "
-        "non-taxable intra-Community supply (art. 41 DL 331/93, "
-        "Italian reverse-charge scheme). VAT is to be accounted for in "
-        "the recipient's member state — no additional Italian VAT liability."
+        "N3.2 — Non-taxable intra-Community supply under art. 41 "
+        "DL 331/93 (Italian reverse-charge scheme). VAT to be "
+        "accounted for by the recipient in their member state."
     ),
     # N3.1 — export outside the EU (art. 8 DPR 633/72)
     ("N3.1", "EN"): (

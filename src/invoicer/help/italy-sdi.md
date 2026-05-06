@@ -61,10 +61,22 @@ You can check via a direct API call or by opening the invoice in Qonto's web UI.
 
 ## If SDI rejects
 
-1. Read the rejection reason in Qonto's UI
-2. Identify the bad field (usually client vat_number, codice destinatario, or an invalid N-code)
-3. Fix in Qonto's web UI (the client, not the invoice — invoices can't be edited after finalize)
-4. Qonto will re-submit automatically, or trigger a retry manually
+1. Run `invoicer sdi-status <invoice_id>` — prints `einvoicing_status`,
+   `status`, the client's SDI fields, footer length, and item-newline
+   count, and flags known risk factors (footer ≥200 chars, newlines in
+   item titles).
+2. The Qonto API does **not** expose the SDI rejection code (Ricevuta
+   di Scarto). For the actual error code, ask Qonto support.
+3. Common confirmed-in-the-wild causes:
+   - **Footer >200 chars** — SDI `<Causale>` has a 200-char-per-occurrence
+     limit. Shorten the "Additional notes" text on the draft.
+   - **Newlines in item titles** — flatten with " — " or "; " before
+     finalizing.
+   - Bad client `vat_number`, missing `codice destinatario`, or an
+     invalid N-code.
+4. You can't edit a finalized invoice — fix the client record in Qonto's
+   web UI (or shorten the footer on a re-issued draft) and Qonto will
+   re-submit, or you re-issue with a new number.
 
 ## Non-Italian Qonto orgs
 
