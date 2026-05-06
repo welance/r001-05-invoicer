@@ -121,7 +121,7 @@ class TestPreviousTag:
         list_topics()
         captured = capsys.readouterr()
         # Top-level commands that should always be present
-        for cmd in ["init", "discover", "draft", "finalize", "mail-draft", "help"]:
+        for cmd in ["init", "discover", "draft", "finalize", "sdi-status", "mail-draft", "help"]:
             assert cmd in captured.out, (
                 f"Command {cmd!r} missing from `invoicer help` output"
             )

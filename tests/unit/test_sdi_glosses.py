@@ -81,6 +81,17 @@ class TestGlossTableConsistency:
                 f"Gloss for {code!r} does not mention the code in its text"
             )
 
+    def test_every_gloss_under_sdi_causale_limit(self):
+        """SDI's <Causale> field has a 200-char-per-occurrence cap and
+        Qonto maps `footer` to a single Causale element. F-2026-05 was
+        rejected with a 249-char footer that came straight from this
+        table's default. Lock that regression in."""
+        for key, text in GLOSSES.items():
+            assert len(text) <= 200, (
+                f"Gloss {key!r} is {len(text)} chars; SDI <Causale> max "
+                f"is 200. Shorten or split."
+            )
+
 
 class TestExtractSdiCode:
     def test_returns_first_non_empty(self):

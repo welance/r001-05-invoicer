@@ -944,6 +944,23 @@ def draft(
             default=_gloss_default,
         ).ask() or ""
 
+    # SDI <Causale> per-occurrence cap is 200 chars. Qonto maps `footer`
+    # to a single Causale element, so anything longer is rejected by SDI
+    # at the XSD-validation step. F-2026-05 hit this with a 249-char
+    # footer. Loop until the user shortens or explicitly opts out.
+    if is_italian_org:
+        while len(notes) > 200:
+            typer.echo(
+                f"\n⚠️  Footer is {len(notes)} chars; SDI <Causale> max is 200 "
+                f"per occurrence. Submitting this would get the invoice rejected "
+                f"by SDI. Shorten it (or empty it):",
+                err=True,
+            )
+            notes = questionary.text(
+                "Additional notes:",
+                default=notes,
+            ).ask() or ""
+
     payload = qonto.build_invoice_payload(
         client_id=qonto_client_id,
         issue_date=issue_date,
@@ -1051,6 +1068,84 @@ def finalize(
     typer.echo(f"  status:            {finalized.get('status')}")
     typer.echo(f"  einvoicing_status: {finalized.get('einvoicing_status', '(not set)')}")
     typer.echo(f"  invoice_url:       {finalized.get('invoice_url', '')}")
+
+
+@app.command("sdi-status")
+def sdi_status(
+    invoice_id: str = typer.Argument(..., help="Qonto invoice id (UUID)"),
+    org: str = typer.Option(
+        None,
+        "--org",
+        help="Qonto org the invoice belongs to. Prompted if ambiguous.",
+    ),
+) -> None:
+    """Inspect a finalized invoice's SDI status + flag known rejection risk factors.
+
+    Qonto's API doesn't surface the SDI rejection code (you must ask Qonto
+    support for the Ricevuta di Scarto). This command prints what the API
+    *does* expose plus flags the data shapes that have caused real rejections
+    in this codebase's history.
+    """
+    from . import project_config
+
+    load_env()
+
+    org_id, _ = _resolve_org(cli_override=org)
+    if org_id:
+        project_config.activate_org(org_id)
+
+    inv = qonto.get_invoice(invoice_id)
+    client = inv.get("client") or {}
+    items = inv.get("items") or []
+    footer = inv.get("footer") or ""
+    items_with_newline = [
+        it.get("title") or ""
+        for it in items
+        if "\n" in (it.get("title") or "") or "\n" in (it.get("description") or "")
+    ]
+
+    typer.echo(f"Invoice {inv.get('number') or '(no number)'}")
+    typer.echo(f"  status:            {inv.get('status')}")
+    typer.echo(f"  einvoicing_status: {inv.get('einvoicing_status', '(not set)')}")
+    typer.echo(
+        f"  total:             "
+        f"{(inv.get('total_amount') or {}).get('value')} "
+        f"{(inv.get('total_amount') or {}).get('currency')}"
+    )
+    typer.echo(f"  invoice_url:       {inv.get('invoice_url', '')}")
+    typer.echo("")
+    typer.echo(f"Client: {client.get('name')}")
+    typer.echo(f"  country_code:              {client.get('country_code')}")
+    typer.echo(f"  vat_number:                {client.get('vat_number')}")
+    typer.echo(f"  tax_identification_number: {client.get('tax_identification_number')}")
+    typer.echo("")
+    typer.echo(f"Items: {len(items)}")
+    typer.echo(f"Footer length: {len(footer)} chars")
+    typer.echo(f"Items with newlines in title/description: {len(items_with_newline)}")
+
+    warnings: list[str] = []
+    if len(footer) > 200:
+        warnings.append(
+            f"Footer is {len(footer)} chars; SDI <Causale> max is 200 per occurrence. "
+            f"Confirmed rejection cause for F-2026-05 (footer 249) — see CHANGELOG."
+        )
+    if items_with_newline:
+        warnings.append(
+            f"{len(items_with_newline)} item(s) contain newlines in title/description. "
+            f"Some AdE validators reject these; flatten with ' — ' or '; '."
+        )
+
+    if warnings:
+        typer.echo("")
+        typer.echo("⚠️  SDI rejection risk factors:")
+        for w in warnings:
+            typer.echo(f"   - {w}")
+    elif inv.get("einvoicing_status") == "declined":
+        typer.echo("")
+        typer.echo(
+            "ℹ️  einvoicing_status=declined but no known risk factor matched. "
+            "Ask Qonto support for the Ricevuta di Scarto (RC) error code."
+        )
 
 
 @app.command("mail-draft")

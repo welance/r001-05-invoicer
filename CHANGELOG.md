@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-05-06
+
+### Fixed
+
+- **Default SDI gloss for `(N3.2, DE)` and `(N3.2, EN)` exceeded the 200-char
+  SDI `<Causale>` cap** (249 and 242 chars respectively). The `draft`
+  command pre-fills `notes` (the Qonto "Additional notes" field, which
+  Qonto maps to a single `<Causale>` element in the SDI XML) from this
+  table — so any IT-org user hitting Enter on the default for a DE or
+  non-IT/non-DE EU client got a footer that SDI deterministically
+  rejected at XSD validation. Real incident: F-2026-05 was scartata
+  with the default 249-char DE gloss, while the prior F-2026-03 (same
+  client, same N3.2, same payment_reporting) had been accepted because
+  the user had hand-written a 125-char footer. Both DE and EN glosses
+  rewritten to ≤200 chars, all glosses now lead with the code (e.g.
+  "N3.2 — …") so the existing "code-in-text" assertion still holds.
+  `tests/unit/test_sdi_glosses.py` gains a `test_every_gloss_under_sdi_causale_limit`
+  regression test.
+- **`draft` now blocks footers >200 chars on Italian-org invoices** with
+  a re-prompt loop. Even after the gloss fix, users editing the default
+  to add explanatory text could still tip over the cap; the preflight
+  catches that before the POST.
+
+### Added
+
+- **`invoicer sdi-status <invoice_id>`** — diagnostic command for finalized
+  invoices. Prints `einvoicing_status`, `status`, total, client SDI fields
+  (`country_code`, `vat_number`, `tax_identification_number`), footer length,
+  and item-newline count, then flags two confirmed rejection risk factors:
+  footer >200 chars (SDI `<Causale>` per-occurrence max) and items with
+  newlines in title/description. The Qonto API does not expose the SDI
+  rejection code itself — that still requires a support request for the
+  Ricevuta di Scarto.
+
 ## [0.6.4] - 2026-05-05
 
 ### Changed
